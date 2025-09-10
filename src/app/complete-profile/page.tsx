@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { onAuthStateChanged, updateProfile, User } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
+import { doc, setDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -37,10 +38,21 @@ export default function CompleteProfilePage() {
     setLoading(true);
 
     try {
+      // 1. Update Firebase Auth profile
       await updateProfile(user, {
         displayName: username,
         photoURL: photoURL,
       });
+
+      // 2. Create a user document in Firestore
+      await setDoc(doc(db, "users", user.uid), {
+        uid: user.uid,
+        displayName: username,
+        email: user.email,
+        photoURL: photoURL,
+        createdAt: new Date(),
+      });
+
       toast({
         title: 'Perfil Completo!',
         description: 'Seu perfil foi atualizado com sucesso.',
