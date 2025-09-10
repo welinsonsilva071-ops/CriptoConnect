@@ -2,10 +2,23 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { onAuthStateChanged, User, signOut, deleteUser } from 'firebase/auth';
+import { auth, db } from '@/lib/firebase';
+import { ref, remove } from 'firebase/database';
 import LeftSidebar from "@/components/layout/left-sidebar";
 import RightSidebar from "@/components/layout/right-sidebar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from '@/components/ui/button';
+import { MoreHorizontal } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { findUserByUid, getUserFromDatabase } from '@/lib/data';
 
 export default function MainLayout({
   children,
@@ -13,17 +26,25 @@ export default function MainLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         if (!currentUser.emailVerified) {
           router.push('/auth/verify-email');
         } else {
-          setUser(currentUser);
-          setLoading(false);
+          // Check if user has completed profile in DB
+          const dbUser = await getUserFromDatabase(currentUser.uid);
+          if (dbUser) {
+            setUser(currentUser);
+            setLoading(false);
+          } else {
+             // User exists in Auth, but not in DB, needs to complete profile
+            router.push('/complete-profile');
+          }
         }
       } else {
         router.push('/login');
@@ -32,6 +53,37 @@ export default function MainLayout({
 
     return () => unsubscribe();
   }, [router]);
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    router.push('/login');
+  };
+
+  const handleDeleteAccount = async () => {
+    if (user) {
+      const confirmation = confirm("Tem certeza que deseja excluir sua conta? Esta ação é irreversível.");
+      if (confirmation) {
+        try {
+          // Delete from Realtime Database
+          await remove(ref(db, `users/${user.uid}`));
+          // Delete from Firebase Auth
+          await deleteUser(user);
+          toast({
+            title: "Conta Excluída",
+            description: "Sua conta foi excluída com sucesso.",
+          });
+          router.push('/signup');
+        } catch (error) {
+          console.error("Error deleting account:", error);
+          toast({
+            variant: "destructive",
+            title: "Erro",
+            description: "Não foi possível excluir a conta. Pode ser necessário fazer login novamente para confirmar.",
+          });
+        }
+      }
+    }
+  };
 
   if (loading) {
     return (
@@ -61,9 +113,33 @@ export default function MainLayout({
           {children}
         </main>
         <aside className="hidden lg:block lg:col-span-3 py-4">
-          <RightSidebar />
+          <div className="sticky top-4 space-y-4">
+             <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="flex items-center justify-between w-full">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold">{user.displayName || user.email}</span>
+                  </div>
+                  <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56">
+                <DropdownMenuLabel>Minha Conta</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout}>
+                  Sair
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleDeleteAccount} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
+                  Excluir Conta
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <RightSidebar />
+          </div>
         </aside>
       </div>
     </div>
   );
 }
+
+    

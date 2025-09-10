@@ -1,5 +1,8 @@
+import { get, ref } from 'firebase/database';
+import { db } from './firebase';
+
 export type User = {
-  id: string;
+  id: string; // This will be the Firebase UID
   name: string;
   username: string;
   avatar: string;
@@ -25,7 +28,8 @@ export type Post = {
   reposts: number;
 };
 
-export const users: User[] = [
+// This is now mock data. In a real app, this would come from the database.
+export let users: User[] = [
   {
     id: 'user-1',
     name: 'Alice',
@@ -52,7 +56,7 @@ export const users: User[] = [
       'Just finished a deep dive into smart contract security. So many pitfalls to avoid.',
     ],
   },
-  {
+    {
     id: 'user-3',
     name: 'Charlie',
     username: 'charlie',
@@ -93,7 +97,7 @@ export const posts: Post[] = [
     comments: 45,
     reposts: 23,
   },
-  {
+    {
     id: 'post-3',
     author: users[2],
     content: 'A quiet moment from my trip to Kyoto last spring. The tranquility of the bamboo forest was surreal. 🌸',
@@ -114,5 +118,26 @@ export const posts: Post[] = [
   },
 ];
 
+
+// Database-aware functions
+export async function getUserFromDatabase(uid: string): Promise<User | null> {
+  const userRef = ref(db, `users/${uid}`);
+  const snapshot = await get(userRef);
+  if (snapshot.exists()) {
+    // Manually add the id (which is the uid) to the user object
+    const userData = snapshot.val();
+    userData.id = uid;
+    return userData as User;
+  }
+  return null;
+}
+
+// Update the mock data functions to also check the database if needed,
+// or transition fully to database calls. For now, we'll keep the mock data
+// and add the database functions.
+
 export const findUserByUsername = (username: string) => users.find(u => u.username === username);
+export const findUserByUid = (uid: string) => users.find(u => u.id === uid);
 export const findPostsByUsername = (username: string) => posts.filter(p => p.author.username === username);
+
+    
