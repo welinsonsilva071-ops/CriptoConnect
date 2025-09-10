@@ -21,8 +21,6 @@ export default function MainLayout({
       if (currentUser) {
         if (!currentUser.emailVerified) {
           router.push('/auth/verify-email');
-        } else if (!currentUser.displayName) {
-          router.push('/complete-profile');
         } else {
           setUser(currentUser);
           setLoading(false);
