@@ -1,31 +1,33 @@
 
 import { db } from './firebase';
-import { ref, get, serverTimestamp, update } from 'firebase/database';
+import { ref, get, serverTimestamp, update, push } from 'firebase/database';
 
 // Function to create a unique chat ID for two users
 const createChatId = (uid1: string, uid2: string) => {
   return uid1 < uid2 ? `${uid1}_${uid2}` : `${uid2}_${uid1}`;
 };
 
-const startChat = async (currentUserId: string, otherUserId: string): Promise<string> => {
+const startChat = async (currentUserId: string, otherUserId: string, initialMessage?: string): Promise<string> => {
   const chatId = createChatId(currentUserId, otherUserId);
   
   try {
-    // We will directly attempt an atomic update.
-    // This operation will only fully succeed if permissions are met for all paths.
-    // The security rules are set up to allow this initial write.
     const updates: { [key: string]: any } = {};
     const chatRef = ref(db, `chats/${chatId}`);
     const chatSnapshot = await get(chatRef);
 
     // Only create the chat structure if it doesn't exist
     if (!chatSnapshot.exists()) {
-        updates[`/chats/${chatId}`] = {
-            members: {
-            [currentUserId]: true,
-            [otherUserId]: true,
-            },
-            createdAt: serverTimestamp(),
+        updates[`/chats/${chatId}/members/${currentUserId}`] = true;
+        updates[`/chats/${chatId}/members/${otherUserId}`] = true;
+        updates[`/chats/${chatId}/createdAt`] = serverTimestamp();
+    }
+    
+    if (initialMessage) {
+        const newMessageRef = push(ref(db, `chats/${chatId}/messages`));
+        updates[`/chats/${chatId}/messages/${newMessageRef.key}`] = {
+            author: currentUserId,
+            content: initialMessage,
+            timestamp: serverTimestamp(),
         };
     }
     

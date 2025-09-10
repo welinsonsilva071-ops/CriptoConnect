@@ -85,13 +85,7 @@ export default function SearchUsersPage() {
     if (!currentUser) return;
     setIsSaving(true);
     try {
-      const chatId = await startChat(currentUser.uid, otherUserId);
-      const messagesRef = ref(db, `chats/${chatId}/messages`);
-      await push(messagesRef, {
-        author: currentUser.uid,
-        content: "Oi, peguei seu contato. Vamos conversar?",
-        timestamp: serverTimestamp(),
-      });
+      await startChat(currentUser.uid, otherUserId, "Oi, peguei seu contato. Vamos conversar?");
 
       toast({
         title: 'Contato Adicionado!',
@@ -107,7 +101,8 @@ export default function SearchUsersPage() {
         title: "Erro",
         description: "Não foi possível adicionar o contato e iniciar a conversa.",
       });
-      setIsSaving(false);
+    } finally {
+        setIsSaving(false);
     }
   };
 
