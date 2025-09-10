@@ -9,11 +9,22 @@ import { ref, onValue, off, push, serverTimestamp, get } from 'firebase/database
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ArrowLeft, Send } from 'lucide-react';
+import { ArrowLeft, Send, Phone } from 'lucide-react';
 import Link from 'next/link';
 import MessageBubble from '@/components/messages/message-bubble';
 import startChat from '@/lib/start-chat';
 import { useToast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 type Message = {
   id: string;
@@ -123,26 +134,58 @@ export default function ChatPage() {
     }
   };
 
+  const handleInitiateCall = () => {
+    toast({
+      title: "Iniciando chamada...",
+      description: `Ligando para ${otherUser?.displayName}.`,
+    })
+    // NOTE: Real call logic (WebRTC) would be implemented here.
+  }
+
   if (loading) {
     return <div className="flex items-center justify-center h-full">Carregando conversa...</div>;
   }
 
   return (
     <>
-      <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm p-2 border-b border-border flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/">
-            <ArrowLeft />
-          </Link>
-        </Button>
+      <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm p-2 border-b border-border flex items-center gap-4 justify-between">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" asChild>
+            <Link href="/">
+              <ArrowLeft />
+            </Link>
+          </Button>
+          {otherUser && (
+            <>
+              <Avatar>
+                <AvatarImage src={otherUser.photoURL} alt={otherUser.displayName} />
+                <AvatarFallback>{otherUser.displayName.charAt(0)}</AvatarFallback>
+              </Avatar>
+              <h2 className="text-lg font-bold">{otherUser.displayName}</h2>
+            </>
+          )}
+        </div>
+        
         {otherUser && (
-          <>
-            <Avatar>
-              <AvatarImage src={otherUser.photoURL} alt={otherUser.displayName} />
-              <AvatarFallback>{otherUser.displayName.charAt(0)}</AvatarFallback>
-            </Avatar>
-            <h2 className="text-lg font-bold">{otherUser.displayName}</h2>
-          </>
+           <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" size="icon">
+                <Phone />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Chamada de Voz</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Você quer fazer uma chamada de voz para {otherUser.displayName}?
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={handleInitiateCall}>Ligar</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
       </header>
 
