@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { db, auth } from '@/lib/firebase';
-import { ref, query, orderByChild, equalTo, get } from 'firebase/database';
+import { ref, query, orderByChild, equalTo, get, push, serverTimestamp } from 'firebase/database';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -11,14 +11,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
-import { Loader2, MessageSquare, Search } from 'lucide-react';
+import { Loader2, UserPlus, Search } from 'lucide-react';
 import type { User as DbUser } from '@/lib/data';
+import startChat from '@/lib/start-chat';
 
 type UserWithPhone = DbUser & { phone: string };
-
-const createChatId = (uid1: string, uid2: string) => {
-  return uid1 < uid2 ? `${uid1}_${uid2}` : `${uid2}_${uid1}`;
-};
 
 export default function SearchUsersPage() {
   const [currentUser] = useAuthState(auth);
@@ -26,7 +23,7 @@ export default function SearchUsersPage() {
   const [searchResult, setSearchResult] = useState<UserWithPhone | null>(null);
   const [loading, setLoading] = useState(false);
   const [notFound, setNotFound] = useState(false);
-  const [navigating, setNavigating] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
   const router = useRouter();
 
@@ -84,21 +81,33 @@ export default function SearchUsersPage() {
     }
   };
 
-  const handleNavigateToChat = async (otherUserId: string) => {
+  const handleSaveContactAndStartChat = async (otherUserId: string) => {
     if (!currentUser) return;
-    setNavigating(true);
+    setIsSaving(true);
     try {
-      // The message page itself will handle creating the chat if it doesn't exist via `startChat`
-      const chatId = createChatId(currentUser.uid, otherUserId);
-      router.push(`/messages/${chatId}`);
+      const chatId = await startChat(currentUser.uid, otherUserId);
+      const messagesRef = ref(db, `chats/${chatId}/messages`);
+      await push(messagesRef, {
+        author: currentUser.uid,
+        content: "Oi, peguei seu contato. Vamos conversar?",
+        timestamp: serverTimestamp(),
+      });
+
+      toast({
+        title: 'Contato Adicionado!',
+        description: 'Você já pode começar a conversar.',
+      });
+
+      router.push('/');
+
     } catch (error) {
-      console.error("Error navigating to chat:", error);
+      console.error("Error starting chat:", error);
       toast({
         variant: "destructive",
         title: "Erro",
-        description: "Não foi possível abrir a tela de conversa.",
+        description: "Não foi possível adicionar o contato e iniciar a conversa.",
       });
-      setNavigating(false);
+      setIsSaving(false);
     }
   };
 
@@ -150,9 +159,9 @@ export default function SearchUsersPage() {
                     <p className="text-sm text-muted-foreground">{searchResult.phone}</p>
                   </div>
                 </div>
-                <Button onClick={() => handleNavigateToChat(searchResult.id)} disabled={navigating}>
-                  {navigating ? <Loader2 className="animate-spin" /> : <MessageSquare />}
-                   <span className="ml-2 hidden sm:inline">Conversar</span>
+                <Button onClick={() => handleSaveContactAndStartChat(searchResult.id)} disabled={isSaving}>
+                  {isSaving ? <Loader2 className="animate-spin" /> : <UserPlus />}
+                   <span className="ml-2 hidden sm:inline">Adicionar aos Contatos</span>
                 </Button>
               </div>
             </CardContent>
