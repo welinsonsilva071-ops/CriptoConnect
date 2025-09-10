@@ -1,15 +1,16 @@
+
 import Link from 'next/link';
-import { Home, User, MessageSquare, Settings, Bell, PenSquare } from 'lucide-react';
+import { Home, User, MessageSquare, Settings, Bell, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { users } from '@/lib/data';
 
 export default function LeftSidebar() {
-  const currentUser = users[0];
+  const currentUser = users[0]; // This is mock, will be replaced by auth user
   const menuItems = [
-    { icon: Home, text: 'Home', href: '/' },
+    { icon: Home, text: 'Conversas', href: '/' },
+    { icon: Search, text: 'Buscar', href: '/search-users' },
     { icon: Bell, text: 'Notifications', href: '/notifications' },
-    { icon: MessageSquare, text: 'Messages', href: '/messages' },
-    { icon: User, text: 'Profile', href: `/${currentUser.username}` },
+    { icon: User, text: 'Profile', href: `/${currentUser.username}` }, // This needs to be dynamic
     { icon: Settings, text: 'Settings', href: '/settings' },
   ];
 
@@ -37,12 +38,6 @@ export default function LeftSidebar() {
           ))}
         </ul>
       </nav>
-      <div className="mt-auto px-2">
-        <Button size="lg" className="w-full text-lg font-bold rounded-full hidden xl:flex">Post</Button>
-        <Button size="icon" className="w-14 h-14 rounded-full xl:hidden">
-          <PenSquare className="h-6 w-6"/>
-        </Button>
-      </div>
     </div>
   );
 }

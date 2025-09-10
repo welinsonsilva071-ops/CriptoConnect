@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -19,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { MoreHorizontal } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { usePathname } from 'next/navigation';
 
 type DbUser = {
   uid: string;
@@ -34,10 +36,13 @@ export default function MainLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [dbUser, setDbUser] = useState<DbUser | null>(null);
+
+  const isMessagesPage = pathname.includes('/messages/');
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
@@ -126,7 +131,7 @@ export default function MainLayout({
         <aside className="hidden md:block md:col-span-3 xl:col-span-2 py-4">
           <LeftSidebar />
         </aside>
-        <main className="col-span-1 md:col-span-9 xl:col-span-7 border-x border-border min-h-screen">
+        <main className={`col-span-1 md:col-span-9 xl:col-span-7 border-x border-border min-h-screen ${isMessagesPage ? 'grid grid-rows-[auto,1fr,auto]' : ''}`}>
           {children}
         </main>
         <aside className="hidden lg:block lg:col-span-3 py-4">
