@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from '@/lib/firebase';
-import { ref, onValue, off } from 'firebase/database';
+import { ref, onValue, off, get } from 'firebase/database';
 import Link from 'next/link';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -59,41 +59,35 @@ export default function HomePage() {
     const userChatsRef = ref(db, `users/${user.uid}/chats`);
     
     const listener = onValue(userChatsRef, (snapshot) => {
+      setIsLoadingChats(true);
       if (snapshot.exists()) {
         const chatIds = Object.keys(snapshot.val());
-        const chatPromises = chatIds.map(chatId => {
-          return new Promise<Chat | null>(resolve => {
-            const chatRef = ref(db, `chats/${chatId}`);
-            onValue(chatRef, async (chatSnap) => {
-              if (chatSnap.exists()) {
-                const chatData = chatSnap.val();
-                const otherMemberId = Object.keys(chatData.members).find(id => id !== user.uid);
+        const chatPromises = chatIds.map(async chatId => {
+          const chatRef = ref(db, `chats/${chatId}`);
+          const chatSnap = await get(chatRef);
 
-                if (otherMemberId) {
-                  const userRef = ref(db, `users/${otherMemberId}`);
-                  onValue(userRef, (userSnap) => {
-                    if (userSnap.exists()) {
-                       const messages = chatData.messages ? Object.values(chatData.messages) as any[] : [];
-                       const lastMessage = messages.sort((a,b) => b.timestamp - a.timestamp)[0];
-                      
-                       resolve({
-                        chatId,
-                        lastMessage: lastMessage?.content || "No messages yet.",
-                        timestamp: lastMessage?.timestamp || chatData.createdAt,
-                        otherMember: { ...userSnap.val(), id: otherMemberId }
-                      });
-                    } else {
-                       resolve(null);
-                    }
-                  }, { onlyOnce: true });
-                } else {
-                  resolve(null);
-                }
-              } else {
-                resolve(null);
+          if (chatSnap.exists()) {
+            const chatData = chatSnap.val();
+            const otherMemberId = Object.keys(chatData.members).find(id => id !== user.uid);
+
+            if (otherMemberId) {
+              const userRef = ref(db, `users/${otherMemberId}`);
+              const userSnap = await get(userRef);
+
+              if (userSnap.exists()) {
+                  const messages = chatData.messages ? Object.values(chatData.messages) as any[] : [];
+                  const lastMessage = messages.sort((a,b) => b.timestamp - a.timestamp)[0];
+                  
+                  return {
+                    chatId,
+                    lastMessage: lastMessage?.content || "No messages yet.",
+                    timestamp: lastMessage?.timestamp || chatData.createdAt,
+                    otherMember: { ...userSnap.val(), id: otherMemberId }
+                  };
               }
-            }, { onlyOnce: true });
-          });
+            }
+          }
+          return null;
         });
 
         Promise.all(chatPromises).then(resolvedChats => {
@@ -114,7 +108,7 @@ export default function HomePage() {
       off(dbUserRef, 'value', unsubscribeDbUser);
     };
 
-  }, [user, loading]);
+  }, [user, loading, router]);
 
   const handleLogout = async () => {
     await signOut(auth);
