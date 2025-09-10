@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from '@/lib/firebase';
-import { ref, onValue, off, update, get, onChildAdded, push } from 'firebase/database';
+import { ref, onValue, off, update, get, onChildAdded, push, remove } from 'firebase/database';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { PhoneOff, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
@@ -52,7 +52,8 @@ export default function CallPage() {
     const remoteAudioRef = useRef<HTMLAudioElement>(null);
     const isPeerConnectionClosed = useRef(false);
 
-    const hangUp = () => {
+    // 1. Unified Cleanup Function
+    const hangUp = async () => {
         if (isPeerConnectionClosed.current) return;
         isPeerConnectionClosed.current = true;
 
@@ -62,29 +63,40 @@ export default function CallPage() {
             peerConnectionRef.current = null;
         }
 
-        if(callData?.status !== 'ended') {
-            const callRef = ref(db, `calls/${callId}`);
-            update(callRef, { status: 'ended' });
+        const callRef = ref(db, `calls/${callId}`);
+        const callSnap = await get(callRef);
+
+        if(callSnap.exists() && callSnap.val().status !== 'ended') {
+            await update(callRef, { status: 'ended' });
         }
+
+        // Cleanup user's incoming call node
+        if (currentUser) {
+            const incomingCallRef = ref(db, `users/${currentUser.uid}/incomingCall`);
+            remove(incomingCallRef);
+        }
+
         router.push('/');
     };
 
-    // Initialize WebRTC connection and media streams
+    // 2. Initialize WebRTC and Media Stream
     useEffect(() => {
         if (!currentUser) return;
 
+        isPeerConnectionClosed.current = false;
+        
         const initialize = async () => {
             try {
-                isPeerConnectionClosed.current = false;
+                // Initialize Peer Connection
                 peerConnectionRef.current = new RTCPeerConnection(configuration);
 
+                // Get local media
                 localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
                 localStreamRef.current.getTracks().forEach(track => {
-                    if (peerConnectionRef.current) {
-                         peerConnectionRef.current.addTrack(track, localStreamRef.current!);
-                    }
+                    peerConnectionRef.current?.addTrack(track, localStreamRef.current!);
                 });
 
+                // Handle remote stream
                 peerConnectionRef.current.ontrack = (event) => {
                     remoteStreamRef.current = event.streams[0];
                     if (remoteAudioRef.current) {
@@ -92,7 +104,8 @@ export default function CallPage() {
                     }
                 };
 
-                 peerConnectionRef.current.oniceconnectionstatechange = () => {
+                // Handle ICE connection state
+                peerConnectionRef.current.oniceconnectionstatechange = () => {
                     if (peerConnectionRef.current?.iceConnectionState === 'disconnected' ||
                         peerConnectionRef.current?.iceConnectionState === 'closed' ||
                         peerConnectionRef.current?.iceConnectionState === 'failed') {
@@ -104,8 +117,8 @@ export default function CallPage() {
                 console.error("Error initializing WebRTC:", error);
                 toast({
                     variant: 'destructive',
-                    title: 'Erro de Chamada',
-                    description: 'Não foi possível acessar seu microfone. Verifique as permissões.'
+                    title: 'Call Error',
+                    description: 'Could not access your microphone. Please check permissions.'
                 });
                 hangUp();
             }
@@ -119,22 +132,27 @@ export default function CallPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentUser, callId]);
 
-    // Handle Firebase signaling
+    // 3. Handle Firebase Signaling (dependent on WebRTC initialization)
     useEffect(() => {
         if (!callId || !currentUser || !peerConnectionRef.current) return;
         
         const callRef = ref(db, `calls/${callId}`);
         const signalingRef = ref(db, `calls/${callId}/signaling`);
-        const iceCandidatesRef = ref(db, `calls/${callId}/iceCandidates`);
 
-        const handleCallState = async (snapshot: any) => {
+        const handleCallState = (snapshot: any) => {
             const data = snapshot.val() as Call;
-            if (!data || data.status === 'rejected' || data.status === 'ended') {
+            if (!data) {
                 hangUp();
                 return;
             }
+
             setCallData(data);
 
+            if (data.status === 'rejected' || data.status === 'ended') {
+                hangUp();
+                return;
+            }
+            
             const otherUserId = data.callerId === currentUser.uid ? data.receiverId : data.callerId;
             const otherUserRef = ref(db, `users/${otherUserId}`);
             get(otherUserRef).then(otherUserSnap => {
@@ -143,14 +161,13 @@ export default function CallPage() {
                 }
             });
 
+            // Caller creates offer when receiver answers
             if (data.status === 'answered' && data.callerId === currentUser.uid && !peerConnectionRef.current?.currentRemoteDescription) {
-                 try {
-                    const offer = await peerConnectionRef.current.createOffer();
-                    await peerConnectionRef.current.setLocalDescription(offer);
-                    update(signalingRef, { type: 'offer', sdp: offer.sdp });
-                 } catch (error) {
-                    console.error("Error creating offer:", error);
-                 }
+                 peerConnectionRef.current.createOffer()
+                    .then(offer => peerConnectionRef.current!.setLocalDescription(offer))
+                    .then(() => {
+                        update(signalingRef, { type: 'offer', sdp: peerConnectionRef.current!.localDescription?.sdp });
+                    }).catch(error => console.error("Error creating offer:", error));
             }
         }
         
@@ -159,34 +176,35 @@ export default function CallPage() {
              const data = snapshot.val();
              if (!data) return;
 
-             if (data.type === 'offer' && callData?.receiverId === currentUser.uid) {
-                try {
+             try {
+                if (data.type === 'offer' && callData?.receiverId === currentUser.uid) {
                     await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data));
                     const answer = await peerConnectionRef.current.createAnswer();
                     await peerConnectionRef.current.setLocalDescription(answer);
                     update(signalingRef, { type: 'answer', sdp: answer?.sdp });
-                } catch(error) {
-                    console.error("Error handling offer:", error);
-                }
-             } else if (data.type === 'answer' && callData?.callerId === currentUser.uid) {
-                try {
+                } else if (data.type === 'answer' && callData?.callerId === currentUser.uid) {
                     await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data));
-                } catch(error) {
-                    console.error("Error handling answer:", error);
                 }
+             } catch(error) {
+                console.error("Error handling signaling message:", error);
              }
         }
 
         const handleIceCandidates = (otherUserId: string) => {
-            peerConnectionRef.current!.onicecandidate = (event) => {
+            if (!peerConnectionRef.current) return;
+            const iceCandidatesRef = ref(db, `calls/${callId}/iceCandidates`);
+
+            peerConnectionRef.current.onicecandidate = (event) => {
                 if (event.candidate) {
-                    push(ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`), event.candidate.toJSON());
+                    push(ref(iceCandidatesRef, currentUser.uid), event.candidate.toJSON());
                 }
             };
-            onChildAdded(ref(db, `calls/${callId}/iceCandidates/${otherUserId}`), (snapshot) => {
+
+            const otherUserIceCandidatesRef = ref(iceCandidatesRef, otherUserId);
+            onChildAdded(otherUserIceCandidatesRef, (snapshot) => {
                 if (snapshot.exists()) {
                     const candidate = new RTCIceCandidate(snapshot.val());
-                    peerConnectionRef.current?.addIceCandidate(candidate).catch(e => console.error("Error adding ICE candidate", e));
+                    peerConnectionRef.current?.addIceCandidate(candidate).catch(e => console.error("Error adding received ICE candidate", e));
                 }
             });
         }
@@ -194,6 +212,7 @@ export default function CallPage() {
         const callListener = onValue(callRef, handleCallState);
         const signalingListener = onValue(signalingRef, handleSignaling);
 
+        // Get initial call data to set up ICE candidates listener
         get(callRef).then(snapshot => {
             const data = snapshot.val();
             if (data) {
@@ -207,7 +226,7 @@ export default function CallPage() {
             off(signalingRef, 'value', signalingListener);
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [callId, currentUser, callData?.status]); // Re-run when callData status changes to handle signaling correctly
+    }, [callId, currentUser, peerConnectionRef.current, callData?.status]); // Depend on peerConnectionRef.current
 
 
     useEffect(() => {
@@ -222,10 +241,11 @@ export default function CallPage() {
 
 
     const toggleMute = () => {
-        localStreamRef.current?.getAudioTracks().forEach(track => {
+        if (!localStreamRef.current) return;
+        localStreamRef.current.getAudioTracks().forEach(track => {
             track.enabled = !track.enabled;
         });
-        setIsMuted(!isMuted);
+        setIsMuted(prev => !prev);
     };
 
     const toggleSpeaker = () => {
@@ -242,7 +262,7 @@ export default function CallPage() {
     };
 
     if (!callData || !otherUserInfo) {
-        return <div className="flex items-center justify-center min-h-screen">Carregando chamada...</div>;
+        return <div className="flex items-center justify-center min-h-screen bg-slate-800 text-white">Carregando chamada...</div>;
     }
 
     const isCaller = callData.callerId === currentUser?.uid;
@@ -285,3 +305,5 @@ export default function CallPage() {
         </div>
     );
 }
+
+    
