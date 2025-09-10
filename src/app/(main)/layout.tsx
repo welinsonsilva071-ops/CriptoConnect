@@ -17,26 +17,36 @@ export default function MainLayout({
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        if (!user.emailVerified) {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser) {
+        if (!currentUser.emailVerified) {
           router.push('/auth/verify-email');
-        } else if (!user.displayName) {
+        } else if (!currentUser.displayName) {
           router.push('/complete-profile');
         } else {
-          setUser(user);
+          setUser(currentUser);
+          setLoading(false);
         }
       } else {
         router.push('/login');
       }
-      setLoading(false);
     });
 
     return () => unsubscribe();
   }, [router]);
 
-  if (loading || !user) {
+  if (loading) {
     return (
+      <div className="flex items-center justify-center min-h-screen">
+        Carregando...
+      </div>
+    )
+  }
+  
+  if (!user) {
+    // This case can happen briefly while redirects are in-flight.
+    // A loading indicator is appropriate here as well.
+     return (
       <div className="flex items-center justify-center min-h-screen">
         Carregando...
       </div>
