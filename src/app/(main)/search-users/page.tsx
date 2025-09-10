@@ -74,8 +74,8 @@ export default function SearchUsersPage() {
     try {
       const chatId = await startChat(currentUser.uid, userId);
       toast({
-        title: "Conversa iniciada!",
-        description: "Você já pode enviar mensagens.",
+        title: "Contato adicionado!",
+        description: "Você já pode iniciar uma conversa.",
       });
       router.push(`/messages/${chatId}`);
     } catch (error: any) {
@@ -93,9 +93,12 @@ export default function SearchUsersPage() {
   return (
     <div>
       <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm p-4 border-b border-border">
-        <h2 className="text-xl font-bold">Adicionar Contato</h2>
+        <h2 className="text-xl font-bold">Adicionar Novo Contato</h2>
       </header>
       <div className="p-4">
+        <CardDescription className="text-center mb-4">
+          Digite o número de telefone do contato para verificar se ele já possui uma conta no aplicativo.
+        </CardDescription>
         <form onSubmit={handleSearch} className="flex gap-2 mb-6">
           <Input
             placeholder="Buscar por número de telefone"
@@ -132,7 +135,7 @@ export default function SearchUsersPage() {
                 </div>
                 <Button onClick={() => handleStartChat(searchResult.id)} disabled={adding}>
                   {adding ? <Loader2 className="animate-spin" /> : <UserPlus />}
-                   <span className="ml-2 hidden sm:inline">Conversar</span>
+                   <span className="ml-2 hidden sm:inline">Adicionar e Conversar</span>
                 </Button>
               </div>
             </CardContent>
