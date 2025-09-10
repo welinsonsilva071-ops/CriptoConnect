@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { onAuthStateChanged, User, signOut, deleteUser } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
-import { ref, remove } from 'firebase/database';
+import { ref, remove, onValue, off } from 'firebase/database';
 import LeftSidebar from "@/components/layout/left-sidebar";
 import RightSidebar from "@/components/layout/right-sidebar";
 import {
@@ -18,7 +18,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { MoreHorizontal } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { getUserFromDatabase } from '@/lib/data';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 type DbUser = {
@@ -41,26 +40,39 @@ export default function MainLayout({
   const [dbUser, setDbUser] = useState<DbUser | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
+        setUser(currentUser);
         if (!currentUser.emailVerified) {
           router.push('/auth/verify-email');
-        } else {
-          const fetchedDbUser = await getUserFromDatabase(currentUser.uid);
-          if (fetchedDbUser) {
-            setUser(currentUser);
-            setDbUser(fetchedDbUser);
+          setLoading(false);
+          return;
+        }
+        
+        const userDbRef = ref(db, `users/${currentUser.uid}`);
+        const unsubscribeDb = onValue(userDbRef, (snapshot) => {
+          if (snapshot.exists()) {
+            setDbUser({ ...snapshot.val(), uid: currentUser.uid });
             setLoading(false);
           } else {
             router.push('/complete-profile');
+            setLoading(false);
           }
+        });
+
+        return () => {
+          off(userDbRef, 'value', unsubscribeDb);
         }
+
       } else {
+        setUser(null);
+        setDbUser(null);
         router.push('/login');
+        setLoading(false);
       }
     });
 
-    return () => unsubscribe();
+    return () => unsubscribeAuth();
   }, [router]);
 
   const handleLogout = async () => {

@@ -119,12 +119,11 @@ export const posts: Post[] = [
 ];
 
 
-// Database-aware functions
+// This function is no longer needed for the main layout as we now use onValue, but can be useful elsewhere.
 export async function getUserFromDatabase(uid: string) {
   const userRef = ref(db, `users/${uid}`);
   const snapshot = await get(userRef);
   if (snapshot.exists()) {
-    // Manually add the id (which is the uid) to the user object
     const userData = snapshot.val();
     return { ...userData, id: uid };
   }
