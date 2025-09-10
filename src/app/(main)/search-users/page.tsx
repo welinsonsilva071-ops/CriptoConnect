@@ -10,9 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import startChat from '@/lib/start-chat';
 import { useRouter } from 'next/navigation';
-import { Loader2, UserPlus, Search } from 'lucide-react';
+import { Loader2, MessageSquare, Search } from 'lucide-react';
 import type { User as DbUser } from '@/lib/data';
 
 type UserWithPhone = DbUser & { phone: string };
@@ -60,9 +59,9 @@ export default function SearchUsersPage() {
             toast({
               variant: 'default',
               title: 'Ops!',
-              description: 'Você não pode adicionar a si mesmo como um contato.'
+              description: 'Você não pode iniciar uma conversa com você mesmo.'
             });
-            setNotFound(true);
+            setNotFound(false);
             setSearchResult(null);
         } else {
             setSearchResult({ ...data[userId], id: userId });
@@ -89,8 +88,7 @@ export default function SearchUsersPage() {
     if (!currentUser) return;
     setNavigating(true);
     try {
-      // We don't need to call startChat here. We'll just navigate.
-      // The message page itself can handle creating the chat if it doesn't exist.
+      // The message page itself will handle creating the chat if it doesn't exist via `startChat`
       const chatId = createChatId(currentUser.uid, otherUserId);
       router.push(`/messages/${chatId}`);
     } catch (error) {
@@ -153,7 +151,7 @@ export default function SearchUsersPage() {
                   </div>
                 </div>
                 <Button onClick={() => handleNavigateToChat(searchResult.id)} disabled={navigating}>
-                  {navigating ? <Loader2 className="animate-spin" /> : <UserPlus />}
+                  {navigating ? <Loader2 className="animate-spin" /> : <MessageSquare />}
                    <span className="ml-2 hidden sm:inline">Conversar</span>
                 </Button>
               </div>
