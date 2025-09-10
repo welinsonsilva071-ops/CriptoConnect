@@ -1,6 +1,6 @@
 
 import { db } from './firebase';
-import { ref, set, push, get, serverTimestamp } from 'firebase/database';
+import { ref, set, get, serverTimestamp, update } from 'firebase/database';
 
 // Function to create a unique chat ID for two users
 const createChatId = (uid1: string, uid2: string) => {
@@ -10,34 +10,39 @@ const createChatId = (uid1: string, uid2: string) => {
 const startChat = async (currentUserId: string, otherUserId: string): Promise<string> => {
   const chatId = createChatId(currentUserId, otherUserId);
   const chatRef = ref(db, `chats/${chatId}`);
+  const userChatsRef = ref(db, `users/${currentUserId}/chats`);
+  const otherUserChatsRef = ref(db, `users/${otherUserId}/chats`);
 
   try {
     const chatSnapshot = await get(chatRef);
 
     if (!chatSnapshot.exists()) {
-      // Chat doesn't exist, create it
-      await set(chatRef, {
+      // Chat doesn't exist, create it with all necessary data atomically.
+      // We use `update` to set data at multiple paths at once.
+      const updates: { [key: string]: any } = {};
+      updates[`/chats/${chatId}`] = {
         members: {
           [currentUserId]: true,
           [otherUserId]: true,
         },
         createdAt: serverTimestamp(),
-      });
-      
-      // Add chat reference to both users' profiles
-      const currentUserChatRef = ref(db, `users/${currentUserId}/chats/${chatId}`);
-      await set(currentUserChatRef, true);
-      
-      const otherUserChatRef = ref(db, `users/${otherUserId}/chats/${chatId}`);
-      await set(otherUserChatRef, true);
+      };
+      updates[`/users/${currentUserId}/chats/${chatId}`] = true;
+      updates[`/users/${otherUserId}/chats/${chatId}`] = true;
+
+      await update(ref(db), updates);
     }
-     // If chat already exists, we just return the ID
+    // If chat already exists, we just return the ID, assuming the user already has access.
     
     return chatId;
 
   } catch (error) {
     console.error("Error starting chat:", error);
-    throw new Error("Could not initiate chat session.");
+    // Check if the error is a permission denied error
+    if ((error as any).code === 'PERMISSION_DENIED') {
+        throw new Error("Você não tem permissão para iniciar esta conversa. Verifique as regras de segurança do seu banco de dados.");
+    }
+    throw new Error("Não foi possível iniciar a sessão de conversa.");
   }
 };
 
