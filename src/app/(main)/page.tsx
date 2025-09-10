@@ -9,14 +9,18 @@ import { ref, onValue, off } from 'firebase/database';
 import Link from 'next/link';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { UserPlus, Users, Plus } from 'lucide-react';
+import { UserPlus, Users, Plus, MoreHorizontal } from 'lucide-react';
 import type { User as DbUser } from '@/lib/data';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { useToast } from '@/hooks/use-toast';
+import { signOut, deleteUser } from 'firebase/auth';
 
 type Chat = {
   chatId: string;
@@ -25,14 +29,32 @@ type Chat = {
   otherMember: DbUser;
 };
 
+type CurrentDbUser = {
+  uid: string;
+  displayName: string;
+  email: string;
+  photoURL?: string;
+  createdAt: string;
+}
+
 export default function HomePage() {
   const [user, loading] = useAuthState(auth);
   const router = useRouter();
+  const { toast } = useToast();
   const [chats, setChats] = useState<Chat[]>([]);
   const [isLoadingChats, setIsLoadingChats] = useState(true);
+  const [dbUser, setDbUser] = useState<CurrentDbUser | null>(null);
+
 
   useEffect(() => {
     if (loading || !user) return;
+
+    const dbUserRef = ref(db, `users/${user.uid}`);
+    const unsubscribeDbUser = onValue(dbUserRef, (snapshot) => {
+        if(snapshot.exists()) {
+            setDbUser(snapshot.val());
+        }
+    });
 
     const userChatsRef = ref(db, `users/${user.uid}/chats`);
     
@@ -89,15 +111,68 @@ export default function HomePage() {
 
     return () => {
       off(userChatsRef, 'value', listener);
+      off(dbUserRef, 'value', unsubscribeDbUser);
     };
 
   }, [user, loading]);
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    router.push('/login');
+  };
+
+  const handleDeleteAccount = async () => {
+    if (user) {
+      const confirmation = confirm("Are you sure you want to delete your account? This action is irreversible.");
+      if (confirmation) {
+        try {
+          await ref(db, `users/${user.uid}`).remove();
+          await deleteUser(user);
+          toast({
+            title: "Account Deleted",
+            description: "Your account has been successfully deleted.",
+          });
+          router.push('/signup');
+        } catch (error) {
+          console.error("Error deleting account:", error);
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Could not delete account. You may need to log in again to confirm.",
+          });
+        }
+      }
+    }
+  };
 
 
   return (
     <div className="relative min-h-screen">
       <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm p-4 border-b border-border flex justify-between items-center">
-        <h2 className="text-xl font-bold">Conversas</h2>
+        <div className="flex items-center gap-2">
+            <Avatar className="h-8 w-8">
+              <AvatarImage src={dbUser?.photoURL || undefined} />
+              <AvatarFallback>{(dbUser?.displayName || 'U').charAt(0)}</AvatarFallback>
+            </Avatar>
+            <h2 className="text-xl font-bold">Conversas</h2>
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon">
+              <MoreHorizontal className="h-5 w-5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-56" align="end">
+            <DropdownMenuLabel>Minha Conta</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleLogout}>
+              Sair
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleDeleteAccount} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
+              Excluir Conta
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </header>
 
       <section>

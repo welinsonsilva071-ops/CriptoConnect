@@ -126,45 +126,11 @@ export default function MainLayout({
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto grid grid-cols-1 md:grid-cols-12 gap-8">
-        <aside className="hidden md:block md:col-span-3 xl:col-span-2 py-4">
-          <LeftSidebar />
-        </aside>
-        <main className={`col-span-1 md:col-span-9 xl:col-span-7 border-x border-border min-h-screen ${isMessagesPage ? 'grid grid-rows-[auto,1fr,auto]' : ''}`}>
+    <div className="min-h-screen bg-background flex justify-center">
+      <div className="w-full max-w-sm flex">
+        <main className={`flex-1 border-x border-border min-h-screen ${isMessagesPage ? 'grid grid-rows-[auto,1fr,auto]' : ''}`}>
           {children}
         </main>
-        <aside className="hidden lg:block lg:col-span-3 py-4">
-          <div className="sticky top-4 space-y-4">
-             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="flex items-center justify-between w-full h-auto py-2">
-                  <div className="flex items-center gap-2">
-                     <Avatar className="h-10 w-10">
-                      <AvatarImage src={dbUser.photoURL || undefined} />
-                      <AvatarFallback>{(dbUser.displayName || 'U').charAt(0)}</AvatarFallback>
-                    </Avatar>
-                    <div className="text-left">
-                      <span className="font-bold">{dbUser.displayName}</span>
-                    </div>
-                  </div>
-                  <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-56">
-                <DropdownMenuLabel>My Account</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout}>
-                  Log Out
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleDeleteAccount} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
-                  Delete Account
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <RightSidebar />
-          </div>
-        </aside>
       </div>
     </div>
   );
