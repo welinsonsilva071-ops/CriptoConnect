@@ -30,7 +30,14 @@ export default function SearchUsersPage() {
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     const phoneToSearch = `+55${searchTerm.replace(/\D/g, '')}`;
-    if (phoneToSearch.length < 13) return;
+    if (phoneToSearch.length < 13) {
+        toast({
+            variant: "destructive",
+            title: "Número Inválido",
+            description: "Por favor, digite um número de telefone válido.",
+        });
+        return;
+    };
 
     setLoading(true);
     setNotFound(false);
@@ -39,7 +46,7 @@ export default function SearchUsersPage() {
     try {
       const usersRef = ref(db, 'users');
       const phoneQuery = query(usersRef, orderByChild('phone'), equalTo(phoneToSearch));
-      let snapshot = await get(phoneQuery);
+      const snapshot = await get(phoneQuery);
 
       if (snapshot.exists()) {
         const data = snapshot.val();
@@ -48,11 +55,11 @@ export default function SearchUsersPage() {
         if (userId === currentUser?.uid) {
             setNotFound(true);
             setSearchResult(null);
-            setLoading(false);
-            return;
+        } else {
+            setSearchResult({ ...data[userId], id: userId });
+            setNotFound(false);
         }
         
-        setSearchResult({ ...data[userId], id: userId });
       } else {
         setNotFound(true);
         setSearchResult(null);
@@ -62,7 +69,7 @@ export default function SearchUsersPage() {
       toast({
         variant: "destructive",
         title: "Erro na Busca",
-        description: "Ocorreu um erro ao buscar o usuário.",
+        description: "Ocorreu um erro ao buscar o usuário. Verifique as regras do seu banco de dados.",
       });
     } finally {
       setLoading(false);
@@ -106,9 +113,10 @@ export default function SearchUsersPage() {
             <Input
               placeholder="(XX) XXXXX-XXXX"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value.replace(/\D/g, ''))}
+              onChange={(e) => setSearchTerm(e.target.value)}
               type="tel"
               className="w-full"
+              maxLength={11}
             />
           </div>
           <Button type="submit" disabled={loading}>
