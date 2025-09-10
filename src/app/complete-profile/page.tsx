@@ -30,6 +30,7 @@ export default function CompleteProfilePage() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      // Pre-fill phone if available from auth (e.g. phone auth), but it won't be in our current email flow.
       if (currentUser?.phoneNumber) {
         setPhone(currentUser.phoneNumber.replace('+55', '').replace(/\D/g, ''));
       }
@@ -135,7 +136,7 @@ export default function CompleteProfilePage() {
                 className="h-24 w-24 cursor-pointer"
                 onClick={() => fileInputRef.current?.click()}
               >
-                <AvatarImage src={photoPreview || undefined} alt="Avatar" />
+                <AvatarImage src={photoPreview || user?.photoURL || undefined} alt="Avatar" />
                 <AvatarFallback>
                   <UserIcon className="h-12 w-12" />
                 </AvatarFallback>
@@ -169,6 +170,7 @@ export default function CompleteProfilePage() {
                   onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
                   placeholder="(XX) XXXXX-XXXX"
                   required
+                  maxLength={11}
                 />
               </div>
             </div>

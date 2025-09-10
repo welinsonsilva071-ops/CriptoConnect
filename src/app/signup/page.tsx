@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createUserWithEmailAndPassword, sendEmailVerification, updateProfile } from 'firebase/auth';
+import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,6 @@ import Link from 'next/link';
 
 export default function SignupPage() {
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -22,23 +21,10 @@ export default function SignupPage() {
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    const fullPhoneNumber = `+55${phone.replace(/\D/g, '')}`;
-    if (fullPhoneNumber.length < 13) {
-      toast({
-        variant: 'destructive',
-        title: 'Erro no Cadastro',
-        description: 'O número de telefone está incompleto.',
-      });
-      return;
-    }
     setLoading(true);
 
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      // We can't save the phone number to the auth object directly without verification.
-      // So we will pass it to the complete-profile page or handle it there.
-      // For now, the user will be prompted to enter it again on the complete profile page.
-      // This is because we are not using Firebase phone authentication.
       
       await sendEmailVerification(userCredential.user);
       
@@ -85,20 +71,6 @@ export default function SignupPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
               />
-            </div>
-             <div className="space-y-2">
-              <Label htmlFor="phone">Número de Telefone</Label>
-               <div className="flex items-center gap-2">
-                <span className="h-10 px-3 py-2 text-base md:text-sm rounded-md border border-input bg-background text-muted-foreground flex items-center">+55</span>
-                <Input
-                  id="phone"
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
-                  placeholder="(XX) XXXXX-XXXX"
-                  required
-                />
-              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Senha</Label>
