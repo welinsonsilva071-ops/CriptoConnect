@@ -12,6 +12,16 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { User as UserIcon } from 'lucide-react';
+import Image from 'next/image';
+
+const avatarOptions = [
+  'https://picsum.photos/id/1027/200/200',
+  'https://picsum.photos/id/1005/200/200',
+  'https://picsum.photos/id/1011/200/200',
+  'https://picsum.photos/id/1012/200/200',
+  'https://picsum.photos/id/1025/200/200',
+  'https://picsum.photos/id/1040/200/200',
+];
 
 export default function CompleteProfilePage() {
   const [username, setUsername] = useState('');
@@ -35,6 +45,14 @@ export default function CompleteProfilePage() {
   const handleCompleteProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    if (!photoURL) {
+       toast({
+        variant: 'destructive',
+        title: 'Selecione um Avatar',
+        description: 'Por favor, escolha uma foto de perfil da galeria.',
+      });
+      return;
+    }
     setLoading(true);
 
     try {
@@ -88,17 +106,23 @@ export default function CompleteProfilePage() {
           <CardDescription>Adicione uma foto e nome de usuário.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleCompleteProfile} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="photoURL">URL da Foto do Perfil</Label>
-              <Input
-                id="photoURL"
-                type="text"
-                placeholder="https://exemplo.com/sua-foto.jpg"
-                value={photoURL}
-                onChange={(e) => setPhotoURL(e.target.value)}
-              />
+          <form onSubmit={handleCompleteProfile} className="space-y-6">
+            <div>
+              <Label className="mb-4 block text-center">Escolha seu avatar</Label>
+              <div className="grid grid-cols-3 gap-4">
+                {avatarOptions.map((url) => (
+                  <button
+                    key={url}
+                    type="button"
+                    onClick={() => setPhotoURL(url)}
+                    className={`rounded-full overflow-hidden transition-all duration-200 ${photoURL === url ? 'ring-4 ring-primary' : 'ring-0 ring-transparent hover:ring-2 hover:ring-primary/50'}`}
+                  >
+                    <Image src={url} alt="Avatar option" width={100} height={100} className="w-full h-auto"/>
+                  </button>
+                ))}
+              </div>
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="username">Nome de Usuário</Label>
               <Input
