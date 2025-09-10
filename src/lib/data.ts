@@ -120,14 +120,13 @@ export const posts: Post[] = [
 
 
 // Database-aware functions
-export async function getUserFromDatabase(uid: string): Promise<User | null> {
+export async function getUserFromDatabase(uid: string) {
   const userRef = ref(db, `users/${uid}`);
   const snapshot = await get(userRef);
   if (snapshot.exists()) {
     // Manually add the id (which is the uid) to the user object
     const userData = snapshot.val();
-    userData.id = uid;
-    return userData as User;
+    return { ...userData, id: uid };
   }
   return null;
 }
@@ -139,5 +138,3 @@ export async function getUserFromDatabase(uid: string): Promise<User | null> {
 export const findUserByUsername = (username: string) => users.find(u => u.username === username);
 export const findUserByUid = (uid: string) => users.find(u => u.id === uid);
 export const findPostsByUsername = (username: string) => posts.filter(p => p.author.username === username);
-
-    

@@ -21,6 +21,14 @@ import { useToast } from '@/hooks/use-toast';
 import { getUserFromDatabase } from '@/lib/data';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
+type DbUser = {
+  uid: string;
+  displayName: string;
+  email: string;
+  photoURL?: string;
+  createdAt: string;
+}
+
 export default function MainLayout({
   children,
 }: {
@@ -30,6 +38,7 @@ export default function MainLayout({
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
+  const [dbUser, setDbUser] = useState<DbUser | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -37,13 +46,12 @@ export default function MainLayout({
         if (!currentUser.emailVerified) {
           router.push('/auth/verify-email');
         } else {
-          // Check if user has completed profile in DB
-          const dbUser = await getUserFromDatabase(currentUser.uid);
-          if (dbUser) {
+          const fetchedDbUser = await getUserFromDatabase(currentUser.uid);
+          if (fetchedDbUser) {
             setUser(currentUser);
+            setDbUser(fetchedDbUser);
             setLoading(false);
           } else {
-             // User exists in Auth, but not in DB, needs to complete profile
             router.push('/complete-profile');
           }
         }
@@ -62,24 +70,22 @@ export default function MainLayout({
 
   const handleDeleteAccount = async () => {
     if (user) {
-      const confirmation = confirm("Tem certeza que deseja excluir sua conta? Esta ação é irreversível.");
+      const confirmation = confirm("Are you sure you want to delete your account? This action is irreversible.");
       if (confirmation) {
         try {
-          // Delete from Realtime Database
           await remove(ref(db, `users/${user.uid}`));
-          // Delete from Firebase Auth
           await deleteUser(user);
           toast({
-            title: "Conta Excluída",
-            description: "Sua conta foi excluída com sucesso.",
+            title: "Account Deleted",
+            description: "Your account has been successfully deleted.",
           });
           router.push('/signup');
         } catch (error) {
           console.error("Error deleting account:", error);
           toast({
             variant: "destructive",
-            title: "Erro",
-            description: "Não foi possível excluir a conta. Pode ser necessário fazer login novamente para confirmar.",
+            title: "Error",
+            description: "Could not delete account. You may need to log in again to confirm.",
           });
         }
       }
@@ -89,17 +95,15 @@ export default function MainLayout({
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        Carregando...
+        Loading...
       </div>
     )
   }
   
-  if (!user) {
-    // This case can happen briefly while redirects are in-flight.
-    // A loading indicator is appropriate here as well.
+  if (!user || !dbUser) {
      return (
       <div className="flex items-center justify-center min-h-screen">
-        Carregando...
+        Loading...
       </div>
     )
   }
@@ -120,24 +124,24 @@ export default function MainLayout({
                 <Button variant="ghost" className="flex items-center justify-between w-full h-auto py-2">
                   <div className="flex items-center gap-2">
                      <Avatar className="h-10 w-10">
-                      <AvatarImage src={user.photoURL || undefined} />
-                      <AvatarFallback>{(user.displayName || user.email || 'U').charAt(0)}</AvatarFallback>
+                      <AvatarImage src={dbUser.photoURL || undefined} />
+                      <AvatarFallback>{(dbUser.displayName || 'U').charAt(0)}</AvatarFallback>
                     </Avatar>
                     <div className="text-left">
-                      <span className="font-bold">{user.displayName || user.email}</span>
+                      <span className="font-bold">{dbUser.displayName}</span>
                     </div>
                   </div>
                   <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-56">
-                <DropdownMenuLabel>Minha Conta</DropdownMenuLabel>
+                <DropdownMenuLabel>My Account</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout}>
-                  Sair
+                  Log Out
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleDeleteAccount} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
-                  Excluir Conta
+                  Delete Account
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -148,4 +152,3 @@ export default function MainLayout({
     </div>
   );
 }
-    
