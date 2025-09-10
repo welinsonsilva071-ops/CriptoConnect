@@ -17,13 +17,17 @@ import type { User as DbUser } from '@/lib/data';
 
 type UserWithPhone = DbUser & { phone: string };
 
+const createChatId = (uid1: string, uid2: string) => {
+  return uid1 < uid2 ? `${uid1}_${uid2}` : `${uid2}_${uid1}`;
+};
+
 export default function SearchUsersPage() {
   const [currentUser] = useAuthState(auth);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResult, setSearchResult] = useState<UserWithPhone | null>(null);
   const [loading, setLoading] = useState(false);
   const [notFound, setNotFound] = useState(false);
-  const [adding, setAdding] = useState(false);
+  const [navigating, setNavigating] = useState(false);
   const { toast } = useToast();
   const router = useRouter();
 
@@ -81,25 +85,22 @@ export default function SearchUsersPage() {
     }
   };
 
-  const handleStartChat = async (userId: string) => {
+  const handleNavigateToChat = async (otherUserId: string) => {
     if (!currentUser) return;
-    setAdding(true);
+    setNavigating(true);
     try {
-      const chatId = await startChat(currentUser.uid, userId);
-      toast({
-        title: "Contato adicionado!",
-        description: "Você já pode iniciar uma conversa.",
-      });
+      // We don't need to call startChat here. We'll just navigate.
+      // The message page itself can handle creating the chat if it doesn't exist.
+      const chatId = createChatId(currentUser.uid, otherUserId);
       router.push(`/messages/${chatId}`);
-    } catch (error: any) {
-      console.error("Error starting chat:", error);
-       toast({
+    } catch (error) {
+      console.error("Error navigating to chat:", error);
+      toast({
         variant: "destructive",
         title: "Erro",
-        description: error.message || "Não foi possível iniciar a conversa.",
+        description: "Não foi possível abrir a tela de conversa.",
       });
-    } finally {
-      setAdding(false);
+      setNavigating(false);
     }
   };
 
@@ -151,9 +152,9 @@ export default function SearchUsersPage() {
                     <p className="text-sm text-muted-foreground">{searchResult.phone}</p>
                   </div>
                 </div>
-                <Button onClick={() => handleStartChat(searchResult.id)} disabled={adding}>
-                  {adding ? <Loader2 className="animate-spin" /> : <UserPlus />}
-                   <span className="ml-2 hidden sm:inline">Adicionar e Conversar</span>
+                <Button onClick={() => handleNavigateToChat(searchResult.id)} disabled={navigating}>
+                  {navigating ? <Loader2 className="animate-spin" /> : <UserPlus />}
+                   <span className="ml-2 hidden sm:inline">Conversar</span>
                 </Button>
               </div>
             </CardContent>
