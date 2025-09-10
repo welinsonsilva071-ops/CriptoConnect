@@ -27,13 +27,8 @@ export default function LoginPage() {
       const user = userCredential.user;
 
       if (user.emailVerified) {
-        // A simple check if displayName is not set, assuming they need to complete profile.
-        // In a real app, you might have a specific flag in your database.
-        if (!user.displayName) {
-          router.push('/complete-profile');
-        } else {
-          router.push('/');
-        }
+        // The main layout will handle redirecting to complete-profile if needed.
+        router.push('/');
       } else {
         toast({
           variant: 'destructive',
