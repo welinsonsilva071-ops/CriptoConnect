@@ -1,0 +1,37 @@
+{
+  "rules": {
+    // Por padrão, ninguém pode ler ou escrever dados.
+    ".read": false,
+    ".write": false,
+    "users": {
+      // Qualquer usuário autenticado pode ler os perfis (necessário para ver perfis de outros).
+      ".read": "auth != null",
+      "$uid": {
+        // Um usuário só pode escrever no seu próprio perfil.
+        ".write": "auth != null && auth.uid === $uid",
+        // Validação para garantir que os dados do perfil estão corretos.
+        ".validate": "newData.hasChildren(['uid', 'displayName', 'email', 'createdAt']) && newData.child('uid').val() === $uid"
+      }
+    },
+    "chats": {
+      "$chatId": {
+        // Permite leitura/escrita se o usuário for membro do chat.
+        ".read": "root.child('chats').child($chatId).child('members').child(auth.uid).exists()",
+        ".write": "root.child('chats').child($chatId).child('members').child(auth.uid).exists()",
+        "messages": {
+            // Validação para novas mensagens
+            "$messageId": {
+                ".validate": "newData.hasChildren(['author', 'content', 'timestamp']) && newData.child('author').val() === auth.uid"
+            }
+        }
+      }
+    },
+    "calls": {
+        "$callId": {
+            // Permite leitura/escrita se o usuário for um membro da chamada (para sinalização WebRTC).
+            ".read": "root.child('calls').child($callId).child('members').child(auth.uid).exists()",
+            ".write": "root.child('calls').child($callId).child('members').child(auth.uid).exists()"
+        }
+    }
+  }
+}
