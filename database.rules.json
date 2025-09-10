@@ -13,7 +13,7 @@
     "chats": {
       "$chatId": {
         ".read": "root.child('chats').child($chatId).child('members').child(auth.uid).exists()",
-        ".write": "!data.exists() || root.child('chats').child($chatId).child('members').child(auth.uid).exists()",
+        ".write": "auth != null && (newData.child('members').child(auth.uid).exists() || !data.exists())",
         "messages": {
           "$messageId": {
             ".validate": "newData.hasChildren(['author', 'content', 'timestamp']) && newData.child('author').val() === auth.uid"
