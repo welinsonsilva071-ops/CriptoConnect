@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import LeftSidebar from "@/components/layout/left-sidebar";
 import RightSidebar from "@/components/layout/right-sidebar";
@@ -13,28 +13,34 @@ export default function MainLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (!user) {
+      if (user) {
+        if (!user.emailVerified) {
+          router.push('/auth/verify-email');
+        } else if (!user.displayName) {
+          router.push('/complete-profile');
+        } else {
+          setUser(user);
+        }
+      } else {
         router.push('/login');
-      } else if (!user.emailVerified) {
-         router.push('/auth/verify-email');
-      } else if (!user.displayName) {
-        router.push('/complete-profile');
       }
+      setLoading(false);
     });
 
     return () => unsubscribe();
   }, [router]);
 
-
-  if (!auth.currentUser || !auth.currentUser.emailVerified || !auth.currentUser.displayName) {
-      return (
-         <div className="flex items-center justify-center min-h-screen">
-            Carregando...
-         </div>
-      )
+  if (loading || !user) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        Carregando...
+      </div>
+    )
   }
 
   return (
