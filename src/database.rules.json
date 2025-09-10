@@ -35,10 +35,10 @@
     },
     "calls": {
       "$callId": {
-        // Apenas o chamador pode criar a chamada.
         // O destinatário e o chamador podem ler os dados da chamada.
         ".read": "auth != null && (data.child('callerId').val() === auth.uid || data.child('receiverId').val() === auth.uid)",
         // Apenas o chamador pode criar a chamada (escrever quando não há dados).
+        // Ambos os participantes podem atualizar uma chamada existente (por exemplo, para alterar o status).
         ".write": "auth != null && ((!data.exists() && newData.child('callerId').val() === auth.uid) || (data.exists() && (data.child('callerId').val() === auth.uid || data.child('receiverId').val() === auth.uid)))"
       }
     }
