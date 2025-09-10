@@ -6,21 +6,11 @@ import { useRouter } from 'next/navigation';
 import { onAuthStateChanged, User, signOut, deleteUser } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { ref, remove, onValue, off } from 'firebase/database';
-import LeftSidebar from "@/components/layout/left-sidebar";
-import RightSidebar from "@/components/layout/right-sidebar";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Button } from '@/components/ui/button';
-import { MoreHorizontal } from 'lucide-react';
+import { MessageCircle, Users, Library, History, Home } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { usePathname } from 'next/navigation';
+import Link from 'next/link';
+import { cn } from '@/lib/utils';
 
 type DbUser = {
   uid: string;
@@ -29,6 +19,13 @@ type DbUser = {
   photoURL?: string;
   createdAt: string;
 }
+
+const navItems = [
+  { href: '/', label: 'Conversas', icon: MessageCircle },
+  { href: '#', label: 'Status', icon: Users },
+  { href: '#', label: 'Biblioteca', icon: Library },
+  { href: '#', label: 'Histórico', icon: History },
+];
 
 export default function MainLayout({
   children,
@@ -127,10 +124,28 @@ export default function MainLayout({
 
   return (
     <div className="min-h-screen bg-background flex justify-center">
-      <div className="w-full max-w-sm flex">
-        <main className={`flex-1 border-x border-border min-h-screen ${isMessagesPage ? 'grid grid-rows-[auto,1fr,auto]' : ''}`}>
+      <div className="w-full max-w-sm flex flex-col">
+        <main className={`flex-1 border-x border-border min-h-0 overflow-y-auto ${isMessagesPage ? 'grid grid-rows-[auto,1fr,auto]' : ''}`}>
           {children}
         </main>
+        {!isMessagesPage && (
+           <footer className="sticky bottom-0 bg-background border-t border-border">
+            <nav className="flex justify-around items-center h-16">
+              {navItems.map((item) => {
+                const isActive = pathname === item.href;
+                return (
+                  <Link href={item.href} key={item.label} className={cn(
+                    "flex flex-col items-center justify-center gap-1 text-xs w-full h-full",
+                    isActive ? "text-primary" : "text-muted-foreground"
+                  )}>
+                      <item.icon className="h-6 w-6" />
+                      <span>{item.label}</span>
+                  </Link>
+                )
+              })}
+            </nav>
+          </footer>
+        )}
       </div>
     </div>
   );

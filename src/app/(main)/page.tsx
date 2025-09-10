@@ -9,7 +9,7 @@ import { ref, onValue, off, get } from 'firebase/database';
 import Link from 'next/link';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { UserPlus, Users, Plus, MoreHorizontal } from 'lucide-react';
+import { UserPlus, Plus, MoreHorizontal } from 'lucide-react';
 import type { User as DbUser } from '@/lib/data';
 import {
   DropdownMenu,
@@ -141,7 +141,7 @@ export default function HomePage() {
 
 
   return (
-    <div className="relative min-h-screen">
+    <div className="relative min-h-full flex flex-col">
       <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm p-4 border-b border-border flex justify-between items-center">
         <div className="flex items-center gap-2">
             <Avatar className="h-8 w-8">
@@ -159,6 +159,12 @@ export default function HomePage() {
           <DropdownMenuContent className="w-56" align="end">
             <DropdownMenuLabel>Minha Conta</DropdownMenuLabel>
             <DropdownMenuSeparator />
+             <DropdownMenuItem asChild>
+               <Link href="/search-users" className="cursor-pointer">
+                <UserPlus className="mr-2 h-4 w-4" />
+                <span>Adicionar Contato</span>
+               </Link>
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={handleLogout}>
               Sair
             </DropdownMenuItem>
@@ -169,7 +175,7 @@ export default function HomePage() {
         </DropdownMenu>
       </header>
 
-      <section>
+      <section className="flex-grow">
         {isLoadingChats && <p className="p-4 text-center text-muted-foreground">Carregando conversas...</p>}
         {!isLoadingChats && chats.length === 0 && (
           <div className="p-8 text-center">
@@ -195,27 +201,13 @@ export default function HomePage() {
         ))}
       </section>
 
-      <div className="absolute bottom-6 right-6">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button className="rounded-full h-14 w-14 shadow-lg">
+      <div className="absolute bottom-20 right-6">
+          <Button className="rounded-full h-14 w-14 shadow-lg" asChild>
+            <Link href="/search-users">
               <Plus className="h-6 w-6" />
-              <span className="sr-only">Abrir Menu</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-56" side="top" align="end">
-            <DropdownMenuItem asChild>
-               <Link href="/search-users" className="cursor-pointer">
-                <UserPlus className="mr-2 h-4 w-4" />
-                <span>Adicionar Contato</span>
-               </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled>
-              <Users className="mr-2 h-4 w-4" />
-              <span>Criar Grupo (em breve)</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <span className="sr-only">Adicionar Contato</span>
+            </Link>
+          </Button>
       </div>
     </div>
   );
