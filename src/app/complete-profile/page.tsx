@@ -29,15 +29,18 @@ export default function CompleteProfilePage() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      // Pre-fill phone if available from auth (e.g. phone auth), but it won't be in our current email flow.
-      if (currentUser?.phoneNumber) {
-        setPhone(currentUser.phoneNumber.replace('+55', '').replace(/\D/g, ''));
+      if (currentUser) {
+        setUser(currentUser);
+        if (currentUser?.phoneNumber) {
+          setPhone(currentUser.phoneNumber.replace('+55', '').replace(/\D/g, ''));
+        }
+      } else {
+        router.push('/login');
       }
       setLoadingAuth(false);
     });
     return () => unsubscribe();
-  }, []);
+  }, [router]);
 
   const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -77,12 +80,7 @@ export default function CompleteProfilePage() {
         const uploadResult = await uploadBytes(photoStorageRef, photo);
         photoURL = await getDownloadURL(uploadResult.ref);
       }
-
-      await updateProfile(user, {
-        displayName: username,
-        photoURL: photoURL,
-      });
-
+      
       const userDbRef = dbRef(db, 'users/' + user.uid);
       await set(userDbRef, {
         uid: user.uid,
@@ -91,6 +89,11 @@ export default function CompleteProfilePage() {
         phone: fullPhoneNumber,
         photoURL: photoURL,
         createdAt: new Date().toISOString(),
+      });
+
+      await updateProfile(user, {
+        displayName: username,
+        photoURL: photoURL,
       });
 
       toast({
@@ -104,14 +107,14 @@ export default function CompleteProfilePage() {
       toast({
         variant: 'destructive',
         title: 'Erro',
-        description: 'Não foi possível salvar o perfil. Tente novamente.',
+        description: 'Não foi possível salvar o perfil. Verifique as regras do banco de dados e tente novamente.',
       });
     } finally {
       setLoading(false);
     }
   };
 
-  if (loadingAuth) {
+  if (loadingAuth || !user) {
     return <div className="flex items-center justify-center min-h-screen">Carregando...</div>;
   }
 
