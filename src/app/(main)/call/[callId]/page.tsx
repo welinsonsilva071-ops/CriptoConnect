@@ -8,8 +8,9 @@ import { auth, db } from '@/lib/firebase';
 import { ref, onValue, off, update, get, onChildAdded, push, remove } from 'firebase/database';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { PhoneOff, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
+import { PhoneOff, Mic, MicOff, Volume2, VolumeX, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 type Call = {
     callerId: string;
@@ -45,6 +46,7 @@ export default function CallPage() {
     const [isMuted, setIsMuted] = useState(false);
     const [isSpeaker, setIsSpeaker] = useState(true);
     const [callDuration, setCallDuration] = useState(0);
+    const [hasMicPermission, setHasMicPermission] = useState(true);
 
     const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
     const localStreamRef = useRef<MediaStream | null>(null);
@@ -92,6 +94,7 @@ export default function CallPage() {
 
                 // Get local media
                 localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                setHasMicPermission(true);
                 localStreamRef.current.getTracks().forEach(track => {
                     peerConnectionRef.current?.addTrack(track, localStreamRef.current!);
                 });
@@ -113,14 +116,23 @@ export default function CallPage() {
                     }
                 };
 
-            } catch (error) {
+            } catch (error: any) {
                 console.error("Error initializing WebRTC:", error);
-                toast({
-                    variant: 'destructive',
-                    title: 'Call Error',
-                    description: 'Could not access your microphone. Please check permissions.'
-                });
-                hangUp();
+                 if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                    setHasMicPermission(false);
+                    toast({
+                        variant: 'destructive',
+                        title: 'Permissão de Microfone Negada',
+                        description: 'Por favor, habilite o acesso ao microfone nas configurações do seu navegador para fazer chamadas.'
+                    });
+                } else {
+                    toast({
+                        variant: 'destructive',
+                        title: 'Erro na Chamada',
+                        description: 'Não foi possível acessar seu microfone. Verifique as permissões.'
+                    });
+                    hangUp();
+                }
             }
         };
 
@@ -183,7 +195,9 @@ export default function CallPage() {
                     await peerConnectionRef.current.setLocalDescription(answer);
                     update(signalingRef, { type: 'answer', sdp: answer?.sdp });
                 } else if (data.type === 'answer' && callData?.callerId === currentUser.uid) {
-                    await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data));
+                    if (peerConnectionRef.current.signalingState !== 'closed') {
+                      await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data));
+                    }
                 }
              } catch(error) {
                 console.error("Error handling signaling message:", error);
@@ -204,7 +218,9 @@ export default function CallPage() {
             onChildAdded(otherUserIceCandidatesRef, (snapshot) => {
                 if (snapshot.exists()) {
                     const candidate = new RTCIceCandidate(snapshot.val());
-                    peerConnectionRef.current?.addIceCandidate(candidate).catch(e => console.error("Error adding received ICE candidate", e));
+                    if (peerConnectionRef.current && peerConnectionRef.current.signalingState !== 'closed') {
+                      peerConnectionRef.current?.addIceCandidate(candidate).catch(e => console.error("Error adding received ICE candidate", e));
+                    }
                 }
             });
         }
@@ -282,6 +298,15 @@ export default function CallPage() {
                     {callData.status === 'dialing' && (isCaller ? 'Discando...' : 'Recebendo chamada...')}
                     {callData.status === 'answered' && formatDuration(callDuration)}
                 </p>
+                 {!hasMicPermission && (
+                    <Alert variant="destructive" className="mt-4 max-w-sm mx-auto">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertTitle>Acesso ao Microfone Negado</AlertTitle>
+                        <AlertDescription>
+                            Por favor, habilite a permissão de microfone nas configurações do seu navegador para continuar.
+                        </AlertDescription>
+                    </Alert>
+                )}
             </div>
 
             <div className="flex flex-col items-center gap-8">
@@ -289,7 +314,7 @@ export default function CallPage() {
                      <Button variant="ghost" className="h-16 w-16 rounded-full bg-white/10 hover:bg-white/20" onClick={toggleSpeaker}>
                         {isSpeaker ? <Volume2 size={32} /> : <VolumeX size={32} />}
                      </Button>
-                     <Button variant="ghost" className="h-16 w-16 rounded-full bg-white/10 hover:bg-white/20" onClick={toggleMute}>
+                     <Button variant="ghost" className="h-16 w-16 rounded-full bg-white/10 hover:bg-white/20" onClick={toggleMute} disabled={!hasMicPermission}>
                         {isMuted ? <MicOff size={32} /> : <Mic size={32} />}
                      </Button>
                  </div>
@@ -305,3 +330,5 @@ export default function CallPage() {
         </div>
     );
 }
+
+    
