@@ -174,9 +174,6 @@ export default function HomePage() {
         {!isLoadingChats && chats.length === 0 && (
           <div className="p-8 text-center">
             <p className="text-muted-foreground mb-4">Nenhuma conversa encontrada.</p>
-            <Button asChild>
-              <Link href="/search-users">Encontrar contatos</Link>
-            </Button>
           </div>
         )}
         {!isLoadingChats && chats.map(chat => (
