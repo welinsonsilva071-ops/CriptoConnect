@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { onAuthStateChanged, updateProfile, User } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
-import { doc, setDoc } from 'firebase/firestore';
+import { ref, set } from 'firebase/database';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -44,13 +44,13 @@ export default function CompleteProfilePage() {
         photoURL: photoURL,
       });
 
-      // 2. Create a user document in Firestore
-      await setDoc(doc(db, "users", user.uid), {
+      // 2. Create a user entry in Realtime Database
+      await set(ref(db, 'users/' + user.uid), {
         uid: user.uid,
         displayName: username,
         email: user.email,
         photoURL: photoURL,
-        createdAt: new Date(),
+        createdAt: new Date().toISOString(),
       });
 
       toast({
