@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from '@/lib/firebase';
-import { ref, onValue, off, push, serverTimestamp, get } from 'firebase/database';
+import { ref, onValue, off, push, serverTimestamp, get, set } from 'firebase/database';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -134,12 +134,41 @@ export default function ChatPage() {
     }
   };
 
-  const handleInitiateCall = () => {
-    toast({
-      title: "Iniciando chamada...",
-      description: `Ligando para ${otherUser?.displayName}.`,
-    })
-    // NOTE: Real call logic (WebRTC) would be implemented here.
+  const handleInitiateCall = async () => {
+    if (!currentUser || !otherUser) return;
+    
+    const callId = push(ref(db, 'calls')).key;
+    if (!callId) {
+      toast({ variant: "destructive", title: "Error", description: "Could not create a call." });
+      return;
+    }
+
+    const currentUserSnap = await get(ref(db, `users/${currentUser.uid}`));
+    const currentUserInfo = currentUserSnap.val();
+
+    const callData = {
+        callerId: currentUser.uid,
+        receiverId: otherUser.uid,
+        callerInfo: {
+            displayName: currentUserInfo.displayName,
+            photoURL: currentUserInfo.photoURL || ''
+        },
+        status: 'dialing',
+        createdAt: serverTimestamp(),
+    };
+
+    try {
+        const callRef = ref(db, `calls/${callId}`);
+        await set(callRef, callData);
+        router.push(`/call/${callId}`);
+    } catch (error) {
+        console.error("Error initiating call:", error);
+        toast({
+            variant: 'destructive',
+            title: "Error",
+            description: "Could not initiate call. Please check your database rules."
+        });
+    }
   }
 
   if (loading) {

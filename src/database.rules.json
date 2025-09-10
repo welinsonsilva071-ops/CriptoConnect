@@ -4,11 +4,14 @@
     ".read": false,
     ".write": false,
     "users": {
+      // Permite que qualquer usuário autenticado leia a lista de usuários para poder fazer a busca.
       ".read": "auth != null",
       "$uid": {
+        // Permite que um usuário escreva apenas no seu próprio perfil.
         ".write": "auth != null && auth.uid === $uid",
         ".validate": "newData.hasChildren(['uid', 'displayName', 'email', 'createdAt', 'phone']) && newData.child('uid').val() === $uid && newData.child('displayName').isString() && newData.child('displayName').val().length > 0 && newData.child('email').isString() && newData.child('phone').isString() && (!newData.hasChild('photoURL') || newData.child('photoURL').isString())",
         "chats": {
+          // Permite que um usuário adicione um chat ao perfil de outro, o que é necessário para iniciar uma conversa.
           ".write": "auth != null"
         }
       },
@@ -32,8 +35,11 @@
     },
     "calls": {
       "$callId": {
-        ".read": "root.child('calls').child($callId).child('members').child(auth.uid).exists()",
-        ".write": "root.child('calls').child($callId).child('members').child(auth.uid).exists()"
+        // Apenas o chamador pode criar a chamada.
+        // O destinatário e o chamador podem ler os dados da chamada.
+        ".read": "auth != null && (data.child('callerId').val() === auth.uid || data.child('receiverId').val() === auth.uid)",
+        // Apenas o chamador pode criar a chamada (escrever quando não há dados).
+        ".write": "auth != null && ((!data.exists() && newData.child('callerId').val() === auth.uid) || (data.exists() && (data.child('callerId').val() === auth.uid || data.child('receiverId').val() === auth.uid)))"
       }
     }
   }
