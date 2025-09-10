@@ -1,0 +1,34 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "users": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.hasChildren(['uid', 'displayName', 'email', 'createdAt', 'phone']) && newData.child('uid').val() === $uid && newData.child('displayName').isString() && newData.child('displayName').val().length > 0 && newData.child('email').isString() && newData.child('phone').isString() && (!newData.hasChild('photoURL') || newData.child('photoURL').isString())",
+        "chats": {
+          ".write": "auth != null"
+        }
+      },
+      ".indexOn": ["phone"]
+    },
+    "chats": {
+      "$chatId": {
+        ".read": "root.child('chats').child($chatId).child('members').child(auth.uid).exists()",
+        ".write": "auth != null && (newData.child('members').child(auth.uid).exists() || !data.exists())",
+        "messages": {
+          "$messageId": {
+            ".validate": "newData.hasChildren(['author', 'content', 'timestamp']) && newData.child('author').val() === auth.uid"
+          }
+        }
+      }
+    },
+    "calls": {
+      "$callId": {
+        ".read": "root.child('calls').child($callId).child('members').child(auth.uid).exists()",
+        ".write": "root.child('calls').child($callId).child('members').child(auth.uid).exists()"
+      }
+    }
+  }
+}
