@@ -15,10 +15,12 @@ import { useRouter } from 'next/navigation';
 import { Loader2, UserPlus, Search } from 'lucide-react';
 import type { User as DbUser } from '@/lib/data';
 
+type UserWithPhone = DbUser & { phone: string };
+
 export default function SearchUsersPage() {
   const [currentUser] = useAuthState(auth);
   const [searchTerm, setSearchTerm] = useState('');
-  const [searchResult, setSearchResult] = useState<DbUser | null>(null);
+  const [searchResult, setSearchResult] = useState<UserWithPhone | null>(null);
   const [loading, setLoading] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -34,25 +36,21 @@ export default function SearchUsersPage() {
     setSearchResult(null);
 
     try {
-      // Search by email
       const usersRef = ref(db, 'users');
-      const emailQuery = query(usersRef, orderByChild('email'), equalTo(searchTerm));
-      let snapshot = await get(emailQuery);
-
-      // If not found, search by username
-      if (!snapshot.exists()) {
-        const usernameQuery = query(usersRef, orderByChild('displayName'), equalTo(searchTerm));
-        snapshot = await get(usernameQuery);
-      }
+      const phoneQuery = query(usersRef, orderByChild('phone'), equalTo(searchTerm));
+      let snapshot = await get(phoneQuery);
 
       if (snapshot.exists()) {
         const data = snapshot.val();
         const userId = Object.keys(data)[0];
+        
         if (userId === currentUser?.uid) {
             setNotFound(true);
             setSearchResult(null);
+            setLoading(false);
             return;
         }
+        
         setSearchResult({ ...data[userId], id: userId });
       } else {
         setNotFound(true);
@@ -95,14 +93,15 @@ export default function SearchUsersPage() {
   return (
     <div>
       <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm p-4 border-b border-border">
-        <h2 className="text-xl font-bold">Buscar Usuários</h2>
+        <h2 className="text-xl font-bold">Adicionar Contato</h2>
       </header>
       <div className="p-4">
         <form onSubmit={handleSearch} className="flex gap-2 mb-6">
           <Input
-            placeholder="Buscar por email ou nome de usuário"
+            placeholder="Buscar por número de telefone"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            type="tel"
           />
           <Button type="submit" disabled={loading}>
             {loading ? <Loader2 className="animate-spin" /> : <Search />}
@@ -111,7 +110,7 @@ export default function SearchUsersPage() {
         </form>
 
         {notFound && (
-          <p className="text-center text-muted-foreground">Nenhum usuário encontrado.</p>
+          <p className="text-center text-muted-foreground">Nenhum usuário encontrado com este número.</p>
         )}
 
         {searchResult && (
@@ -128,7 +127,7 @@ export default function SearchUsersPage() {
                   </Avatar>
                   <div>
                     <p className="font-semibold">{searchResult.displayName}</p>
-                    <p className="text-sm text-muted-foreground">{searchResult.email}</p>
+                    <p className="text-sm text-muted-foreground">{searchResult.phone}</p>
                   </div>
                 </div>
                 <Button onClick={() => handleStartChat(searchResult.id)} disabled={adding}>

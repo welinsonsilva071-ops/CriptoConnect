@@ -19,6 +19,7 @@ export default function CompleteProfilePage() {
   const [user, setUser] = useState<User | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [username, setUsername] = useState('');
+  const [phone, setPhone] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -29,6 +30,9 @@ export default function CompleteProfilePage() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      if (currentUser?.phoneNumber) {
+        setPhone(currentUser.phoneNumber);
+      }
       setLoadingAuth(false);
     });
     return () => unsubscribe();
@@ -53,30 +57,36 @@ export default function CompleteProfilePage() {
       });
       return;
     }
+    if (!phone.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro',
+        description: 'O número de telefone é obrigatório.',
+      });
+      return;
+    }
     setLoading(true);
 
     try {
       let photoURL = user.photoURL || '';
 
-      // Upload photo if a new one is selected
       if (photo) {
         const photoStorageRef = storageRef(storage, `avatars/${user.uid}/${photo.name}`);
         const uploadResult = await uploadBytes(photoStorageRef, photo);
         photoURL = await getDownloadURL(uploadResult.ref);
       }
 
-      // Update Firebase Auth profile
       await updateProfile(user, {
         displayName: username,
         photoURL: photoURL,
       });
 
-      // Save user data to Realtime Database
       const userDbRef = dbRef(db, 'users/' + user.uid);
       await set(userDbRef, {
         uid: user.uid,
         displayName: username,
         email: user.email,
+        phone: phone,
         photoURL: photoURL,
         createdAt: new Date().toISOString(),
       });
@@ -108,7 +118,7 @@ export default function CompleteProfilePage() {
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>Complete seu Perfil</CardTitle>
-          <CardDescription>Para continuar, adicione um nome de usuário e uma foto de perfil.</CardDescription>
+          <CardDescription>Para continuar, adicione seus dados.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSaveProfile} className="space-y-6">
@@ -134,7 +144,7 @@ export default function CompleteProfilePage() {
                 variant="link"
                 onClick={() => fileInputRef.current?.click()}
               >
-                Escolher Foto
+                Escolher Foto (opcional)
               </Button>
             </div>
             <div className="space-y-2">
@@ -143,7 +153,18 @@ export default function CompleteProfilePage() {
                 id="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="ex: @joaosilva"
+                placeholder="ex: João Silva"
+                required
+              />
+            </div>
+             <div className="space-y-2">
+              <Label htmlFor="phone">Número de Telefone (obrigatório)</Label>
+              <Input
+                id="phone"
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+55 (XX) XXXXX-XXXX"
                 required
               />
             </div>

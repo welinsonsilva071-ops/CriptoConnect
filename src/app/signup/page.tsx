@@ -1,8 +1,9 @@
+
 "use client";
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
+import { createUserWithEmailAndPassword, sendEmailVerification, updateProfile } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,7 +14,7 @@ import Link from 'next/link';
 
 export default function SignupPage() {
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('+55');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -21,10 +22,23 @@ export default function SignupPage() {
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!phone.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro no Cadastro',
+        description: 'O número de telefone é obrigatório.',
+      });
+      return;
+    }
     setLoading(true);
 
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      // We can't save the phone number to the auth object directly without verification.
+      // So we will pass it to the complete-profile page or handle it there.
+      // For now, the user will be prompted to enter it again on the complete profile page.
+      // This is because we are not using Firebase phone authentication.
+      
       await sendEmailVerification(userCredential.user);
       
       toast({
@@ -77,11 +91,8 @@ export default function SignupPage() {
                 id="phone"
                 type="tel"
                 value={phone}
-                onChange={(e) => {
-                  if (e.target.value.startsWith('+55')) {
-                    setPhone(e.target.value)
-                  }
-                }}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+55 (XX) XXXXX-XXXX"
                 required
               />
             </div>
