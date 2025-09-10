@@ -9,8 +9,14 @@ import { ref, onValue, off } from 'firebase/database';
 import Link from 'next/link';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { UserPlus } from 'lucide-react';
+import { UserPlus, Users, Plus } from 'lucide-react';
 import type { User as DbUser } from '@/lib/data';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type Chat = {
   chatId: string;
@@ -89,15 +95,9 @@ export default function HomePage() {
 
 
   return (
-    <div>
+    <div className="relative min-h-screen">
       <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm p-4 border-b border-border flex justify-between items-center">
         <h2 className="text-xl font-bold">Conversas</h2>
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/search-users">
-            <UserPlus />
-            <span className="sr-only">Adicionar Contato</span>
-          </Link>
-        </Button>
       </header>
 
       <section>
@@ -128,6 +128,29 @@ export default function HomePage() {
           </Link>
         ))}
       </section>
+
+      <div className="absolute bottom-6 right-6">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button className="rounded-full h-14 w-14 shadow-lg">
+              <Plus className="h-6 w-6" />
+              <span className="sr-only">Abrir Menu</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-56" side="top" align="end">
+            <DropdownMenuItem asChild>
+               <Link href="/search-users" className="cursor-pointer">
+                <UserPlus className="mr-2 h-4 w-4" />
+                <span>Adicionar Contato</span>
+               </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled>
+              <Users className="mr-2 h-4 w-4" />
+              <span>Criar Grupo (em breve)</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </div>
   );
 }
