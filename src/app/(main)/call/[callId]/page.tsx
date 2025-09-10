@@ -192,15 +192,15 @@ export default function CallPage() {
 
         const handleIceCandidates = (otherUserId: string) => {
             if (!peerConnectionRef.current) return;
-            const iceCandidatesRef = ref(db, `calls/${callId}/iceCandidates`);
 
             peerConnectionRef.current.onicecandidate = (event) => {
                 if (event.candidate) {
-                    push(ref(iceCandidatesRef, currentUser.uid), event.candidate.toJSON());
+                    const currentUserIceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`);
+                    push(currentUserIceCandidatesRef, event.candidate.toJSON());
                 }
             };
 
-            const otherUserIceCandidatesRef = ref(iceCandidatesRef, otherUserId);
+            const otherUserIceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${otherUserId}`);
             onChildAdded(otherUserIceCandidatesRef, (snapshot) => {
                 if (snapshot.exists()) {
                     const candidate = new RTCIceCandidate(snapshot.val());
