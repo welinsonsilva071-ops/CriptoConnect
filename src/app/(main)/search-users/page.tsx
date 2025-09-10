@@ -53,6 +53,11 @@ export default function SearchUsersPage() {
         const userId = Object.keys(data)[0];
         
         if (userId === currentUser?.uid) {
+            toast({
+              variant: 'default',
+              title: 'Ops!',
+              description: 'Você não pode adicionar a si mesmo como um contato.'
+            });
             setNotFound(true);
             setSearchResult(null);
         } else {
@@ -113,7 +118,7 @@ export default function SearchUsersPage() {
             <Input
               placeholder="(XX) XXXXX-XXXX"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => setSearchTerm(e.target.value.replace(/\D/g, ''))}
               type="tel"
               className="w-full"
               maxLength={11}
