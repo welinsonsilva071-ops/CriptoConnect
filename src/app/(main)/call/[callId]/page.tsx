@@ -134,7 +134,7 @@ export default function CallPage() {
 
     // 3. Handle Firebase Signaling (dependent on WebRTC initialization)
     useEffect(() => {
-        if (!callId || !currentUser || !peerConnectionRef.current) return;
+        if (!callId || !currentUser) return;
         
         const callRef = ref(db, `calls/${callId}`);
         const signalingRef = ref(db, `calls/${callId}/signaling`);
@@ -162,7 +162,7 @@ export default function CallPage() {
             });
 
             // Caller creates offer when receiver answers
-            if (data.status === 'answered' && data.callerId === currentUser.uid && !peerConnectionRef.current?.currentRemoteDescription) {
+            if (data.status === 'answered' && data.callerId === currentUser.uid && peerConnectionRef.current && !peerConnectionRef.current.currentRemoteDescription) {
                  peerConnectionRef.current.createOffer()
                     .then(offer => peerConnectionRef.current!.setLocalDescription(offer))
                     .then(() => {
@@ -215,7 +215,7 @@ export default function CallPage() {
         // Get initial call data to set up ICE candidates listener
         get(callRef).then(snapshot => {
             const data = snapshot.val();
-            if (data) {
+            if (data && peerConnectionRef.current) {
                 const otherUserId = data.callerId === currentUser.uid ? data.receiverId : data.callerId;
                 handleIceCandidates(otherUserId);
             }
@@ -226,7 +226,7 @@ export default function CallPage() {
             off(signalingRef, 'value', signalingListener);
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [callId, currentUser, peerConnectionRef.current, callData?.status]); // Depend on peerConnectionRef.current
+    }, [callId, currentUser, callData?.status]);
 
 
     useEffect(() => {
@@ -305,5 +305,3 @@ export default function CallPage() {
         </div>
     );
 }
-
-    
