@@ -22,11 +22,12 @@ export default function SignupPage() {
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!phone.trim()) {
+    const fullPhoneNumber = `+55${phone.replace(/\D/g, '')}`;
+    if (fullPhoneNumber.length < 13) {
       toast({
         variant: 'destructive',
         title: 'Erro no Cadastro',
-        description: 'O número de telefone é obrigatório.',
+        description: 'O número de telefone está incompleto.',
       });
       return;
     }
@@ -87,14 +88,17 @@ export default function SignupPage() {
             </div>
              <div className="space-y-2">
               <Label htmlFor="phone">Número de Telefone</Label>
-              <Input
-                id="phone"
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+55 (XX) XXXXX-XXXX"
-                required
-              />
+               <div className="flex items-center gap-2">
+                <span className="h-10 px-3 py-2 text-base md:text-sm rounded-md border border-input bg-background text-muted-foreground flex items-center">+55</span>
+                <Input
+                  id="phone"
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                  placeholder="(XX) XXXXX-XXXX"
+                  required
+                />
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Senha</Label>

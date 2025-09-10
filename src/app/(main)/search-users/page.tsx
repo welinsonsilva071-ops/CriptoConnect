@@ -29,7 +29,8 @@ export default function SearchUsersPage() {
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!searchTerm.trim()) return;
+    const phoneToSearch = `+55${searchTerm.replace(/\D/g, '')}`;
+    if (phoneToSearch.length < 13) return;
 
     setLoading(true);
     setNotFound(false);
@@ -37,7 +38,7 @@ export default function SearchUsersPage() {
 
     try {
       const usersRef = ref(db, 'users');
-      const phoneQuery = query(usersRef, orderByChild('phone'), equalTo(searchTerm));
+      const phoneQuery = query(usersRef, orderByChild('phone'), equalTo(phoneToSearch));
       let snapshot = await get(phoneQuery);
 
       if (snapshot.exists()) {
@@ -100,12 +101,16 @@ export default function SearchUsersPage() {
           Digite o número de telefone do contato para verificar se ele já possui uma conta no aplicativo.
         </CardDescription>
         <form onSubmit={handleSearch} className="flex gap-2 mb-6">
-          <Input
-            placeholder="Buscar por número de telefone"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            type="tel"
-          />
+          <div className="flex items-center gap-2 w-full">
+            <span className="h-10 px-3 py-2 text-base md:text-sm rounded-md border border-input bg-background text-muted-foreground flex items-center">+55</span>
+            <Input
+              placeholder="(XX) XXXXX-XXXX"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value.replace(/\D/g, ''))}
+              type="tel"
+              className="w-full"
+            />
+          </div>
           <Button type="submit" disabled={loading}>
             {loading ? <Loader2 className="animate-spin" /> : <Search />}
             <span className="ml-2 hidden sm:inline">Buscar</span>

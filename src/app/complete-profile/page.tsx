@@ -31,7 +31,7 @@ export default function CompleteProfilePage() {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (currentUser?.phoneNumber) {
-        setPhone(currentUser.phoneNumber);
+        setPhone(currentUser.phoneNumber.replace('+55', '').replace(/\D/g, ''));
       }
       setLoadingAuth(false);
     });
@@ -57,11 +57,12 @@ export default function CompleteProfilePage() {
       });
       return;
     }
-    if (!phone.trim()) {
-      toast({
+    const fullPhoneNumber = `+55${phone.replace(/\D/g, '')}`;
+    if (fullPhoneNumber.length < 13) {
+       toast({
         variant: 'destructive',
         title: 'Erro',
-        description: 'O número de telefone é obrigatório.',
+        description: 'O número de telefone está incompleto.',
       });
       return;
     }
@@ -86,7 +87,7 @@ export default function CompleteProfilePage() {
         uid: user.uid,
         displayName: username,
         email: user.email,
-        phone: phone,
+        phone: fullPhoneNumber,
         photoURL: photoURL,
         createdAt: new Date().toISOString(),
       });
@@ -159,14 +160,17 @@ export default function CompleteProfilePage() {
             </div>
              <div className="space-y-2">
               <Label htmlFor="phone">Número de Telefone (obrigatório)</Label>
-              <Input
-                id="phone"
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+55 (XX) XXXXX-XXXX"
-                required
-              />
+               <div className="flex items-center gap-2">
+                <span className="h-10 px-3 py-2 text-base md:text-sm rounded-md border border-input bg-background text-muted-foreground flex items-center">+55</span>
+                <Input
+                  id="phone"
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                  placeholder="(XX) XXXXX-XXXX"
+                  required
+                />
+              </div>
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? 'Salvando...' : 'Confirmar e Salvar'}
