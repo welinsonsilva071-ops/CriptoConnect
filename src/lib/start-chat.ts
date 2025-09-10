@@ -10,8 +10,6 @@ const createChatId = (uid1: string, uid2: string) => {
 const startChat = async (currentUserId: string, otherUserId: string): Promise<string> => {
   const chatId = createChatId(currentUserId, otherUserId);
   const chatRef = ref(db, `chats/${chatId}`);
-  const userChatsRef = ref(db, `users/${currentUserId}/chats`);
-  const otherUserChatsRef = ref(db, `users/${otherUserId}/chats`);
 
   try {
     const chatSnapshot = await get(chatRef);
