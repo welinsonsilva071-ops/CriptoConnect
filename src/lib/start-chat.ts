@@ -1,6 +1,6 @@
 
 import { db } from './firebase';
-import { ref, get, serverTimestamp, update, push } from 'firebase/database';
+import { ref, serverTimestamp, update, push } from 'firebase/database';
 
 // Function to create a unique chat ID for two users
 const createChatId = (uid1: string, uid2: string) => {
@@ -12,15 +12,13 @@ const startChat = async (currentUserId: string, otherUserId: string, initialMess
   
   try {
     const updates: { [key: string]: any } = {};
-    const chatRef = ref(db, `chats/${chatId}`);
-    const chatSnapshot = await get(chatRef);
-
-    // Only create the chat structure if it doesn't exist
-    if (!chatSnapshot.exists()) {
-        updates[`/chats/${chatId}/members/${currentUserId}`] = true;
-        updates[`/chats/${chatId}/members/${otherUserId}`] = true;
-        updates[`/chats/${chatId}/createdAt`] = serverTimestamp();
-    }
+    
+    // Directly set the data for a new chat or update existing.
+    // The rules will handle permissions.
+    updates[`/chats/${chatId}/members/${currentUserId}`] = true;
+    updates[`/chats/${chatId}/members/${otherUserId}`] = true;
+    updates[`/users/${currentUserId}/chats/${chatId}`] = true;
+    updates[`/users/${otherUserId}/chats/${chatId}`] = true;
     
     if (initialMessage) {
         const newMessageRef = push(ref(db, `chats/${chatId}/messages`));
@@ -30,10 +28,6 @@ const startChat = async (currentUserId: string, otherUserId: string, initialMess
             timestamp: serverTimestamp(),
         };
     }
-    
-    // Always ensure the chat link exists for both users
-    updates[`/users/${currentUserId}/chats/${chatId}`] = true;
-    updates[`/users/${otherUserId}/chats/${chatId}`] = true;
 
     await update(ref(db), updates);
     
