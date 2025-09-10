@@ -18,7 +18,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { MoreHorizontal } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { findUserByUid, getUserFromDatabase } from '@/lib/data';
+import { getUserFromDatabase } from '@/lib/data';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 export default function MainLayout({
   children,
@@ -116,9 +117,15 @@ export default function MainLayout({
           <div className="sticky top-4 space-y-4">
              <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="flex items-center justify-between w-full">
+                <Button variant="ghost" className="flex items-center justify-between w-full h-auto py-2">
                   <div className="flex items-center gap-2">
-                    <span className="font-bold">{user.displayName || user.email}</span>
+                     <Avatar className="h-10 w-10">
+                      <AvatarImage src={user.photoURL || undefined} />
+                      <AvatarFallback>{(user.displayName || user.email || 'U').charAt(0)}</AvatarFallback>
+                    </Avatar>
+                    <div className="text-left">
+                      <span className="font-bold">{user.displayName || user.email}</span>
+                    </div>
                   </div>
                   <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
                 </Button>
@@ -141,5 +148,4 @@ export default function MainLayout({
     </div>
   );
 }
-
     
