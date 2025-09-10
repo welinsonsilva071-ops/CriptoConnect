@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from '@/lib/firebase';
-import { ref, onValue, off, push, serverTimestamp, get, set } from 'firebase/database';
+import { ref, onValue, off, push, serverTimestamp, get, set, update } from 'firebase/database';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -158,8 +158,12 @@ export default function ChatPage() {
     };
 
     try {
-        const callRef = ref(db, `calls/${callId}`);
-        await set(callRef, callData);
+        const updates: { [key: string]: any } = {};
+        updates[`/calls/${callId}`] = callData;
+        updates[`/users/${otherUser.uid}/incomingCall`] = { callId: callId, from: currentUser.uid };
+        
+        await update(ref(db), updates);
+
         router.push(`/call/${callId}`);
     } catch (error) {
         console.error("Error initiating call:", error);

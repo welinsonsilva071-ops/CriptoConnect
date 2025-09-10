@@ -3,8 +3,8 @@
 
 import { useState, useEffect } from 'react';
 import { db } from '@/lib/firebase';
-import { ref, query, orderByChild, equalTo, onValue, off, update } from 'firebase/database';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { ref, onValue, off, update, remove, get } from 'firebase/database';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Phone, PhoneOff } from 'lucide-react';
@@ -26,27 +26,45 @@ export default function IncomingCallNotification({ userId }: { userId: string })
     const router = useRouter();
 
     useEffect(() => {
-        const callsRef = ref(db, 'calls');
-        const q = query(callsRef, orderByChild('receiverId'), equalTo(userId));
+        if (!userId) return;
 
-        const unsubscribe = onValue(q, (snapshot) => {
-            let activeCall: Call | null = null;
-            snapshot.forEach((childSnapshot) => {
-                const callData = childSnapshot.val();
-                if (callData.status === 'dialing') {
-                    activeCall = { id: childSnapshot.key, ...callData };
+        const incomingCallRef = ref(db, `users/${userId}/incomingCall`);
+
+        const unsubscribe = onValue(incomingCallRef, async (snapshot) => {
+            const incomingCallData = snapshot.val();
+            if (incomingCallData?.callId) {
+                const callRef = ref(db, `calls/${incomingCallData.callId}`);
+                const callSnap = await get(callRef);
+                if (callSnap.exists()) {
+                    const callData = callSnap.val();
+                    if (callData.status === 'dialing') {
+                        setIncomingCall({ id: callSnap.key, ...callData });
+                    } else {
+                        // Clean up if the call is no longer active
+                        remove(incomingCallRef);
+                        setIncomingCall(null);
+                    }
                 }
-            });
-            setIncomingCall(activeCall);
+            } else {
+                setIncomingCall(null);
+            }
         });
 
-        return () => off(q, 'value', unsubscribe);
+        return () => off(incomingCallRef, 'value', unsubscribe);
     }, [userId]);
+
+    const cleanup = () => {
+        if (!userId) return;
+        const incomingCallRef = ref(db, `users/${userId}/incomingCall`);
+        remove(incomingCallRef);
+        setIncomingCall(null);
+    }
 
     const handleAnswer = () => {
         if (!incomingCall) return;
         const callRef = ref(db, `calls/${incomingCall.id}`);
         update(callRef, { status: 'answered' });
+        cleanup();
         router.push(`/call/${incomingCall.id}`);
     };
 
@@ -54,7 +72,7 @@ export default function IncomingCallNotification({ userId }: { userId: string })
         if (!incomingCall) return;
         const callRef = ref(db, `calls/${incomingCall.id}`);
         update(callRef, { status: 'rejected' });
-        setIncomingCall(null); // Hide notification immediately
+        cleanup();
     };
     
     if (!incomingCall) {
