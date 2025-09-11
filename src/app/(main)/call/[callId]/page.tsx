@@ -55,10 +55,6 @@ export default function CallPage() {
   
   const callRef = useRef(ref(db, `calls/${callId}`));
 
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
   const hangUp = useCallback(async (shouldNavigate = true) => {
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
@@ -82,67 +78,87 @@ export default function CallPage() {
     }
   }, [callId, currentUser, router]);
 
+  useEffect(() => {
+    setIsMounted(true);
+    return () => {
+        // This cleanup now only handles component unmount logic, not call ending
+        if (peerConnectionRef.current) {
+            peerConnectionRef.current.close();
+        }
+        if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach(track => track.stop());
+        }
+    };
+  }, []);
 
   useEffect(() => {
     if (!isMounted || !currentUser || !callId) return;
 
     let callListener: any;
-    let otherIceCandidatesRef: any;
-    let iceListener: any;
+    const iceCandidateListeners: { [key: string]: any } = {};
 
-    const cleanup = () => {
-        if (peerConnectionRef.current) {
-            peerConnectionRef.current.close();
-            peerConnectionRef.current = null;
-        }
-        if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach(track => track.stop());
-            localStreamRef.current = null;
-        }
-        if (callListener) off(callRef.current, 'value', callListener);
-        if (otherIceCandidatesRef && iceListener) off(otherIceCandidatesRef, 'value', iceListener);
+    const initializePeerConnection = async () => {
+      try {
+        localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+        setHasMicPermission(true);
+      } catch (error) {
+        console.error("Mic permission denied:", error);
+        setHasMicPermission(false);
+        toast({
+            variant: 'destructive',
+            title: 'Permissão de Microfone Negada',
+            description: 'Você precisa permitir o acesso ao microfone para fazer chamadas.'
+        });
+        return null;
+      }
+      
+      const pc = new RTCPeerConnection(iceServers);
+      peerConnectionRef.current = pc;
+      
+      localStreamRef.current.getTracks().forEach(track => {
+          pc.addTrack(track, localStreamRef.current!);
+      });
+
+      remoteStreamRef.current = new MediaStream();
+      if (remoteAudioRef.current) {
+          remoteAudioRef.current.srcObject = remoteStreamRef.current;
+      }
+      
+      pc.ontrack = (event) => {
+          event.streams[0].getTracks().forEach(track => {
+              remoteStreamRef.current?.addTrack(track);
+          });
+      };
+      
+      pc.onicecandidate = event => {
+          if (event.candidate) {
+              const iceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`);
+              push(iceCandidatesRef, event.candidate.toJSON());
+          }
+      };
+
+      return pc;
     };
 
-    const initialize = async () => {
-        try {
-            localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
-            setHasMicPermission(true);
-        } catch (error) {
-            console.error("Mic permission denied:", error);
-            setHasMicPermission(false);
-            toast({
-                variant: 'destructive',
-                title: 'Permissão de Microfone Negada',
-                description: 'Você precisa permitir o acesso ao microfone para fazer chamadas.'
+    const setupIceListeners = (pc: RTCPeerConnection, otherId: string) => {
+        const otherIceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${otherId}`);
+        iceCandidateListeners[otherId] = onValue(otherIceCandidatesRef, (snapshot) => {
+            snapshot.forEach((childSnapshot) => {
+                 if (pc.signalingState !== 'closed') {
+                    pc.addIceCandidate(new RTCIceCandidate(childSnapshot.val())).catch(e => console.error("Error adding received ICE candidate", e));
+                 }
+                remove(childSnapshot.ref);
             });
-            return;
-        }
-
-        const pc = new RTCPeerConnection(iceServers);
-        peerConnectionRef.current = pc;
-        
-        localStreamRef.current.getTracks().forEach(track => {
-            pc.addTrack(track, localStreamRef.current!);
         });
-        
-        remoteStreamRef.current = new MediaStream();
-        if (remoteAudioRef.current) {
-            remoteAudioRef.current.srcObject = remoteStreamRef.current;
-        }
-
-        pc.ontrack = (event) => {
-            event.streams[0].getTracks().forEach(track => {
-                remoteStreamRef.current?.addTrack(track);
-            });
-        };
     };
 
     callListener = onValue(callRef.current, async (snapshot) => {
         const data = snapshot.val() as CallData;
         
         if (!snapshot.exists() || data.status === 'ended') {
-            cleanup();
-            if (router) router.push('/');
+            if (peerConnectionRef.current?.signalingState !== 'closed') {
+                 hangUp(true);
+            }
             return;
         }
 
@@ -159,38 +175,20 @@ export default function CallPage() {
         }
         
         if (!peerConnectionRef.current) {
-            await initialize();
+            const pc = await initializePeerConnection();
+            if (pc) {
+                setupIceListeners(pc, otherId);
+            }
         }
+        
         const pc = peerConnectionRef.current;
         if (!pc) return;
-
-        // Setup ICE candidates listeners only once
-        if (!iceListener) {
-            const iceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`);
-            otherIceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${otherId}`);
-            
-            pc.onicecandidate = event => {
-                if (event.candidate) {
-                    push(iceCandidatesRef, event.candidate.toJSON());
-                }
-            };
-            iceListener = onValue(otherIceCandidatesRef, (iceSnapshot) => {
-                if (iceSnapshot.exists()) {
-                    iceSnapshot.forEach((childSnapshot) => {
-                         if (pc.signalingState !== 'closed') {
-                            pc.addIceCandidate(new RTCIceCandidate(childSnapshot.val())).catch(e => console.error("Error adding ICE", e));
-                         }
-                        remove(childSnapshot.ref);
-                    });
-                }
-            });
-        }
 
         // State machine for signaling
         if (isCaller && !data.offer && pc.signalingState === 'stable') {
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
-            await update(snapshot.ref, { offer: offer });
+            await update(snapshot.ref, { offer });
         }
 
         if (!isCaller && data.offer && !data.answer) {
@@ -199,17 +197,24 @@ export default function CallPage() {
              }
              const answer = await pc.createAnswer();
              await pc.setLocalDescription(answer);
-             await update(snapshot.ref, { answer: answer, status: 'answered' });
+             await update(snapshot.ref, { answer, status: 'answered' });
         }
         
-        if (isCaller && data.answer && pc.signalingState === 'have-local-offer') {
-            await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+        if (data.answer && pc.signalingState === 'have-local-offer') {
+             if(pc.remoteDescription?.type !== 'answer') {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+             }
         }
 
+    }, (error) => {
+        console.error("Firebase onValue error:", error);
     });
 
     return () => {
-      cleanup();
+      if (callListener) off(callRef.current, 'value', callListener);
+      Object.keys(iceCandidateListeners).forEach(key => {
+          off(ref(db, `calls/${callId}/iceCandidates/${key}`), 'value', iceCandidateListeners[key]);
+      })
     };
 
   }, [isMounted, currentUser, callId, hangUp, toast, otherUser, router]);
@@ -309,3 +314,5 @@ export default function CallPage() {
     </div>
   );
 }
+
+    
