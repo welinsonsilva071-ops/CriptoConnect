@@ -90,6 +90,7 @@ export default function VideoCallPage() {
     });
     
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
       hangUp();
     };
 
@@ -340,4 +341,5 @@ export default function VideoCallPage() {
     </div>
   );
 }
+
     

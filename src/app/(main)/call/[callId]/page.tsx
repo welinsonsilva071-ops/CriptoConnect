@@ -90,6 +90,7 @@ export default function CallPage() {
     });
     
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
       hangUp();
     };
 
@@ -209,7 +210,7 @@ export default function CallPage() {
         if (callListener && callDbRef) off(callDbRef, 'value', callListener);
         iceListeners.forEach(({ ref, listener }) => off(ref, 'value', listener));
     }
-  }, [currentUser, callId, toast]);
+  }, [currentUser, callId, toast, isMuted, otherUser]);
 
 
   useEffect(() => {
@@ -317,4 +318,6 @@ export default function CallPage() {
     </div>
   );
 }
+    
+
     
