@@ -169,13 +169,7 @@ export default function CallPage() {
             }
 
             // --- Signaling Logic ---
-            // Caller: Create offer
-            if (isCaller && !data.offer && pc.signalingState === 'stable') {
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-                await update(callDbRef, { offer });
-            }
-
+            
             // Receiver: Set remote offer and create answer
             if (data.offer && pc.signalingState === 'stable') {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
@@ -207,6 +201,17 @@ export default function CallPage() {
                     });
                 });
                 iceValueListeners.push({ ref: otherIceCandidatesRef, listener: iceListener });
+            }
+        });
+
+        // Caller: Create offer only after setting up the listener
+        get(callDbRef).then(async snapshot => {
+            const data = snapshot.val();
+            const pc = pcRef.current;
+            if (data.callerId === currentUser.uid && !data.offer && pc && pc.signalingState === 'stable') {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                await update(callDbRef, { offer });
             }
         });
     };
@@ -327,6 +332,4 @@ export default function CallPage() {
     </div>
   );
 }
-    
-
     
