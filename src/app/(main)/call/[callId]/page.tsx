@@ -96,9 +96,11 @@ export default function CallPage() {
   useEffect(() => {
     if (!isMounted || !currentUser || !callId) return;
 
-    let iceCandidateListeners: any[] = [];
-    
-    const initialize = async () => {
+    const otherUserId = callData?.callerId === currentUser.uid ? callData?.receiverId : callData?.callerId;
+
+    const initializePeerConnection = async () => {
+        if (peerConnectionRef.current) return;
+
         try {
             localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
             setHasMicPermission(true);
@@ -114,24 +116,41 @@ export default function CallPage() {
         }
 
         peerConnectionRef.current = new RTCPeerConnection(iceServers);
+        
         localStreamRef.current.getTracks().forEach(track => {
             peerConnectionRef.current?.addTrack(track, localStreamRef.current!);
         });
-
+        
         remoteStreamRef.current = new MediaStream();
         if (remoteAudioRef.current) {
             remoteAudioRef.current.srcObject = remoteStreamRef.current;
         }
-        
+
         peerConnectionRef.current.ontrack = (event) => {
             event.streams[0].getTracks().forEach(track => {
                 remoteStreamRef.current?.addTrack(track);
             });
-            // Re-assign the stream to the audio element in case it wasn't ready before
-            if (remoteAudioRef.current && remoteStreamRef.current) {
-               remoteAudioRef.current.srcObject = remoteStreamRef.current;
+             if (remoteAudioRef.current) {
+                remoteAudioRef.current.srcObject = remoteStreamRef.current;
             }
         };
+
+        peerConnectionRef.current.onicecandidate = event => {
+            if (event.candidate) {
+                push(ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`), event.candidate.toJSON());
+            }
+        };
+    };
+
+    const setupIceListeners = (pc: RTCPeerConnection, otherId: string) => {
+        const otherUserIceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${otherId}`);
+        onValue(otherUserIceCandidatesRef, (snapshot) => {
+            snapshot.forEach((childSnapshot) => {
+                const candidate = new RTCIceCandidate(childSnapshot.val());
+                pc.addIceCandidate(candidate).catch(e => console.error("Error adding received ICE candidate", e));
+                remove(childSnapshot.ref);
+            });
+        });
     };
 
     const callListener = onValue(callRef.current, async (snapshot) => {
@@ -143,66 +162,57 @@ export default function CallPage() {
             return;
         }
 
+        const currentOtherUserId = data.callerId === currentUser.uid ? data.receiverId : data.callerId;
+
+        if (!otherUser) {
+            get(ref(db, `users/${currentOtherUserId}`)).then(userSnap => {
+                if (userSnap.exists()) {
+                    setOtherUser({ uid: currentOtherUserId, ...userSnap.val() });
+                }
+            });
+        }
+        
         if (!peerConnectionRef.current) {
-            await initialize();
-        }
-        
-        const pc = peerConnectionRef.current!;
-
-        const otherUserId = data.callerId === currentUser.uid ? data.receiverId : data.callerId;
-        
-        get(ref(db, `users/${otherUserId}`)).then(userSnap => {
-            if (userSnap.exists()) {
-                setOtherUser({ uid: otherUserId, ...userSnap.val() });
-            }
-        });
-        
-        // Handle signaling
-        if (data.type === 'offer' && data.receiverId === currentUser.uid && pc.signalingState !== 'stable') {
-            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: data.sdp }));
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            await update(callRef.current, { type: 'answer', sdp: pc.localDescription?.sdp });
-        } else if (data.type === 'answer' && data.callerId === currentUser.uid && pc.signalingState !== 'stable') {
-            if (pc.currentRemoteDescription?.sdp !== data.sdp) {
-              await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }));
-            }
+            await initializePeerConnection();
         }
 
-        if (data.status === 'answered' && data.callerId === currentUser.uid && !pc.currentRemoteDescription) {
-             if (pc.signalingState === 'have-local-offer') return;
+        const pc = peerConnectionRef.current;
+        if (!pc) return;
+        
+        // Caller creates offer
+        if (data.status === 'answered' && data.callerId === currentUser.uid && pc.signalingState === 'stable') {
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
-            await update(callRef.current, { type: 'offer', sdp: pc.localDescription?.sdp });
+            await update(snapshot.ref, { type: 'offer', sdp: pc.localDescription?.sdp });
+            setupIceListeners(pc, data.receiverId);
+        }
+
+        // Receiver answers offer
+        if (data.type === 'offer' && data.receiverId === currentUser.uid && pc.signalingState === 'have-remote-offer') {
+             // This condition is now implicitly handled by the next one, but good for clarity
         }
         
-        // Setup ICE candidate listeners
-        pc.onicecandidate = event => {
-            if (event.candidate) {
-                push(ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`), event.candidate.toJSON());
-            }
-        };
+        if(data.type === 'offer' && pc.signalingState !== 'have-remote-offer' && data.receiverId === currentUser.uid){
+             await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: data.sdp }));
+             const answer = await pc.createAnswer();
+             await pc.setLocalDescription(answer);
+             await update(snapshot.ref, { type: 'answer', sdp: pc.localDescription?.sdp });
+             setupIceListeners(pc, data.callerId);
+        }
 
-        const otherUserIceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${otherUserId}`);
-        const iceListener = onValue(otherUserIceCandidatesRef, (snapshot) => {
-            snapshot.forEach((childSnapshot) => {
-                const candidate = childSnapshot.val();
-                if(pc.signalingState !== 'closed' && candidate) {
-                    pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.error("Error adding received ICE candidate", e));
-                }
-                childSnapshot.ref.remove(); // Remove candidate after using it
-            });
-        });
-        iceCandidateListeners.push({ ref: otherUserIceCandidatesRef, listener: iceListener });
+        // Caller receives answer
+        if (data.type === 'answer' && data.callerId === currentUser.uid && pc.signalingState === 'have-local-offer') {
+            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }));
+        }
+
     });
 
     return () => {
         off(callRef.current, 'value', callListener);
-        iceCandidateListeners.forEach(item => off(item.ref, 'value', item.listener));
         cleanUp(false);
     };
 
-  }, [isMounted, currentUser, callId, hangUp, toast, cleanUp]);
+  }, [isMounted, currentUser, callId, hangUp, toast, cleanUp, otherUser]);
 
 
   useEffect(() => {
@@ -301,3 +311,5 @@ export default function CallPage() {
     </div>
   );
 }
+
+    
