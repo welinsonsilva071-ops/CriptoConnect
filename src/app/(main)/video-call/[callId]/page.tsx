@@ -11,7 +11,6 @@ import { Mic, MicOff, PhoneOff, Video, VideoOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 const iceServers = {
@@ -51,9 +50,7 @@ export default function VideoCallPage() {
   const localStreamRef = useRef<MediaStream | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const iceCandidateQueue = useRef<RTCIceCandidate[]>([]);
-
-
+  
   const hangUp = useCallback(async () => {
     if (pcRef.current) {
       if (pcRef.current.signalingState !== 'closed') {
@@ -80,137 +77,130 @@ export default function VideoCallPage() {
     router.push('/');
   }, [callId, currentUser, router]);
 
-
+  // Effect to listen for call status changes (e.g., ended by other user)
   useEffect(() => {
+    if(!callId) return;
     const callDbRef = ref(db, `calls/${callId}`);
 
-    const callListener = onValue(callDbRef, (snapshot) => {
+    const callStatusListener = onValue(callDbRef, (snapshot) => {
         if (!snapshot.exists() || snapshot.val().status === 'ended') {
             toast({ title: 'Chamada Encerrada' });
             hangUp();
         }
     });
     
-    const handleBeforeUnload = () => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       hangUp();
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => {
-        off(callDbRef, 'value', callListener);
+        off(callDbRef, 'value', callStatusListener);
         window.removeEventListener('beforeunload', handleBeforeUnload);
     }
   }, [callId, hangUp, toast]);
 
 
+  // Effect for WebRTC Connection Setup
   useEffect(() => {
-    if (!currentUser || !callId || pcRef.current) return;
+    if (!currentUser || !callId) return;
 
     let callListener: any;
     let iceListeners: any[] = [];
     const callDbRef = ref(db, `calls/${callId}`);
 
     const setupCall = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-            localStreamRef.current = stream;
-            if (localVideoRef.current) {
-                localVideoRef.current.srcObject = stream;
-            }
-        } catch (error) {
-            console.error("Media permission denied:", error);
-            setHasPermissions(false);
-            toast({
-                variant: 'destructive',
-                title: 'Permissões Necessárias',
-                description: 'Você precisa permitir o acesso à câmera e ao microfone.'
-            });
-            return;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        localStreamRef.current = stream;
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
         }
+      } catch (error) {
+        console.error("Media permission denied:", error);
+        setHasPermissions(false);
+        toast({
+          variant: 'destructive',
+          title: 'Permissões Necessárias',
+          description: 'Você precisa permitir o acesso à câmera e ao microfone.'
+        });
+        return;
+      }
 
-        pcRef.current = new RTCPeerConnection(iceServers);
+      pcRef.current = new RTCPeerConnection(iceServers);
+      const pc = pcRef.current;
+
+      localStreamRef.current.getTracks().forEach(track => {
+        pc.addTrack(track, localStreamRef.current!);
+      });
+
+      pc.ontrack = (event) => {
+        if (remoteVideoRef.current && event.streams[0]) {
+          remoteVideoRef.current.srcObject = event.streams[0];
+        }
+      };
+
+      pc.onicecandidate = event => {
+        if (event.candidate) {
+          const iceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`);
+          push(iceCandidatesRef, event.candidate.toJSON());
+        }
+      };
+
+      // Main signaling logic
+      callListener = onValue(callDbRef, async (snapshot) => {
+        if (!snapshot.exists()) return;
+
+        const data = snapshot.val() as CallData;
         const pc = pcRef.current;
+        if (!pc || pc.signalingState === 'closed') return;
 
-        localStreamRef.current.getTracks().forEach(track => {
-            pc.addTrack(track, localStreamRef.current!);
-        });
+        setCallStatus(data.status);
+        const isCaller = data.callerId === currentUser.uid;
+        const otherUserId = isCaller ? data.receiverId : data.callerId;
 
-        pc.ontrack = (event) => {
-            if (remoteVideoRef.current && event.streams[0]) {
-                remoteVideoRef.current.srcObject = event.streams[0];
-            }
-        };
-
-        pc.onicecandidate = event => {
-            if (event.candidate) {
-                const iceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`);
-                push(iceCandidatesRef, event.candidate.toJSON());
-            }
-        };
-
-        callListener = onValue(callDbRef, async (snapshot) => {
-            if (!snapshot.exists()) return;
-            
-            const pc = pcRef.current;
-            if (!pc || pc.signalingState === 'closed') return;
-
-            const data = snapshot.val() as CallData;
-            setCallStatus(data.status);
-            const isCaller = data.callerId === currentUser.uid;
-            const otherUserId = isCaller ? data.receiverId : data.callerId;
-
-            if (!otherUser && otherUserId) {
-                 get(ref(db, `users/${otherUserId}`)).then(userSnap => {
-                    if (userSnap.exists()) setOtherUser({ uid: otherUserId, ...userSnap.val() });
-                });
-            }
-
-            // --- Signaling Logic ---
-            // Receiver: Set remote offer, create answer
-            if (data.offer && pc.signalingState === 'stable') {
-                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                await update(snapshot.ref, { answer, status: 'answered' });
-                iceCandidateQueue.current.forEach(candidate => pc.addIceCandidate(candidate).catch(e => console.error("Error adding queued ICE candidate", e)));
-                iceCandidateQueue.current = [];
-            } 
-            // Caller: Set remote answer
-            else if (data.answer && pc.signalingState === 'have-local-offer') {
-                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-                iceCandidateQueue.current.forEach(candidate => pc.addIceCandidate(candidate).catch(e => console.error("Error adding queued ICE candidate", e)));
-                iceCandidateQueue.current = [];
-            }
-            
-            // Setup ICE listeners for the other user
-            if (otherUserId && !iceListeners.find(l => l.id === otherUserId)) {
-                const iceRef = ref(db, `calls/${callId}/iceCandidates/${otherUserId}`);
-                const iceListener = onValue(iceRef, (iceSnapshot) => {
-                    iceSnapshot.forEach((childSnapshot) => {
-                        const candidate = new RTCIceCandidate(childSnapshot.val());
-                        if (pc.remoteDescription) {
-                            pc.addIceCandidate(candidate).catch(e => console.error("Error adding received ICE candidate", e));
-                        } else {
-                            iceCandidateQueue.current.push(candidate);
-                        }
-                        remove(childSnapshot.ref);
-                    });
-                });
-                iceListeners.push({ id: otherUserId, ref: iceRef, listener: iceListener });
-            }
-        });
+        if (!otherUser && otherUserId) {
+          get(ref(db, `users/${otherUserId}`)).then(userSnap => {
+            if (userSnap.exists()) setOtherUser({ uid: otherUserId, ...userSnap.val() });
+          });
+        }
+        
+        // Receiver Logic
+        if (data.offer && pc.signalingState === 'stable') {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          await update(snapshot.ref, { answer, status: 'answered' });
+        } 
+        // Caller Logic
+        else if (data.answer && pc.signalingState === 'have-local-offer') {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+        }
+        
+        // ICE Candidate listener
+        if (otherUserId && !iceListeners.find(l => l.id === otherUserId)) {
+          const iceRef = ref(db, `calls/${callId}/iceCandidates/${otherUserId}`);
+          const iceListener = onValue(iceRef, (iceSnapshot) => {
+            iceSnapshot.forEach((childSnapshot) => {
+              const candidate = new RTCIceCandidate(childSnapshot.val());
+              if (pc.remoteDescription) {
+                pc.addIceCandidate(candidate).catch(e => console.error("Error adding received ICE candidate", e));
+              }
+              remove(childSnapshot.ref);
+            });
+          });
+          iceListeners.push({ id: otherUserId, ref: iceRef, listener: iceListener });
+        }
+      });
          
-        // Caller: Create offer only after setting up the listener
-        get(callDbRef).then(async snapshot => {
-            const data = snapshot.val();
-            const pc = pcRef.current;
-            if (data.callerId === currentUser.uid && !data.offer && pc && pc.signalingState === 'stable') {
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-                await update(callDbRef, { offer });
-            }
-        });
+      // Caller initiates the offer
+      const initialCallData = (await get(callDbRef)).val();
+      if (initialCallData.callerId === currentUser.uid && !initialCallData.offer && pc.signalingState === 'stable') {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        await update(callDbRef, { offer });
+      }
     };
     
     setupCall();
@@ -296,7 +286,7 @@ export default function VideoCallPage() {
                     playsInline 
                     className="w-full h-full object-cover" 
                 />
-                 {!remoteVideoRef.current?.srcObject && <VideoPlaceholder user={otherUser} />}
+                 {(!remoteVideoRef.current?.srcObject || !remoteVideoRef.current.videoWidth) && <VideoPlaceholder user={otherUser} />}
             </div>
 
             {/* Local Video - Bottom Half */}
@@ -350,6 +340,4 @@ export default function VideoCallPage() {
     </div>
   );
 }
-    
-
     

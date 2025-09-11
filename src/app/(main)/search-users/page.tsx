@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { db, auth } from '@/lib/firebase';
-import { ref, query, orderByChild, equalTo, get, push, serverTimestamp } from 'firebase/database';
+import { ref, query, orderByChild, equalTo, get } from 'firebase/database';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -12,15 +12,20 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { Loader2, UserPlus, Search } from 'lucide-react';
-import type { User as DbUser } from '@/lib/data';
 import startChat from '@/lib/start-chat';
 
-type UserWithPhone = DbUser & { phone: string };
+type DbUser = {
+  id: string;
+  uid: string;
+  displayName: string;
+  photoURL?: string;
+  phone: string;
+};
 
 export default function SearchUsersPage() {
   const [currentUser] = useAuthState(auth);
   const [searchTerm, setSearchTerm] = useState('');
-  const [searchResult, setSearchResult] = useState<UserWithPhone | null>(null);
+  const [searchResult, setSearchResult] = useState<DbUser | null>(null);
   const [loading, setLoading] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -61,7 +66,7 @@ export default function SearchUsersPage() {
             setNotFound(false);
             setSearchResult(null);
         } else {
-            setSearchResult({ ...data[userId], id: userId });
+            setSearchResult({ ...data[userId], id: userId, uid: userId });
             setNotFound(false);
         }
         

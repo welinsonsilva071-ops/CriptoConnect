@@ -199,7 +199,7 @@ export default function MainLayout({
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        Loading...
+        Carregando...
       </div>
     )
   }
@@ -207,7 +207,7 @@ export default function MainLayout({
   if (!user || !dbUser) {
      return (
       <div className="flex items-center justify-center min-h-screen">
-        Loading...
+        Carregando...
       </div>
     )
   }
@@ -215,7 +215,7 @@ export default function MainLayout({
   return (
     <div className="min-h-screen bg-background flex justify-center">
       <div className="w-full max-w-sm flex flex-col relative">
-        <main className={`flex-1 border-x border-border min-h-0 overflow-y-auto ${isMessagesPage || isCallPage ? 'grid grid-rows-[auto,1fr,auto]' : ''}`}>
+        <main className={`flex-1 border-x border-border min-h-0 overflow-y-auto ${isMessagesPage || isCallPage ? 'grid' : ''}`}>
           {children}
         </main>
         {!isMessagesPage && !isCallPage && (

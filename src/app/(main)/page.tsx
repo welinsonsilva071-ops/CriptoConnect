@@ -10,7 +10,6 @@ import Link from 'next/link';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { UserPlus, Plus, MoreHorizontal } from 'lucide-react';
-import type { User as DbUser } from '@/lib/data';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,6 +20,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from '@/hooks/use-toast';
 import { signOut, deleteUser } from 'firebase/auth';
+
+type DbUser = {
+  id: string;
+  uid: string;
+  displayName: string;
+  email: string;
+  photoURL?: string;
+};
 
 type Chat = {
   chatId: string;
@@ -82,7 +89,7 @@ export default function HomePage() {
                     chatId,
                     lastMessage: lastMessage?.content || "No messages yet.",
                     timestamp: lastMessage?.timestamp || chatData.createdAt,
-                    otherMember: { ...userSnap.val(), id: otherMemberId }
+                    otherMember: { ...userSnap.val(), id: otherMemberId, uid: otherMemberId }
                   };
               }
             }
