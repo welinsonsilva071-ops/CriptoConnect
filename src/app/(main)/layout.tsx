@@ -5,13 +5,27 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
-import { ref, onValue, off, get } from 'firebase/database';
-import { MessageCircle, Users, Library, History } from 'lucide-react';
+import { ref, onValue, off, get, update } from 'firebase/database';
+import { MessageCircle, Users, Library, History, Phone, PhoneOff } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import IncomingCallNotification from '@/components/calls/incoming-call-notification';
-import type { Call } from '@/components/calls/incoming-call-notification';
+import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+
+
+type Call = {
+  id: string;
+  callerId: string;
+  receiverId: string;
+  status: 'ringing' | 'answered' | 'ended';
+  caller: {
+    displayName: string;
+    photoURL?: string;
+  }
+};
+
 
 type DbUser = {
   uid: string;
@@ -39,9 +53,67 @@ export default function MainLayout({
   const [user, setUser] = useState<User | null>(null);
   const [dbUser, setDbUser] = useState<DbUser | null>(null);
   const [incomingCall, setIncomingCall] = useState<Call | null>(null);
+  const { toast, dismiss } = useToast();
 
   const isMessagesPage = pathname.includes('/messages/');
   const isCallPage = pathname.includes('/call/');
+
+    useEffect(() => {
+    if (!incomingCall) return;
+
+    const handleAccept = async () => {
+      const updates: { [key: string]: any } = {};
+      updates[`/calls/${incomingCall.id}/status`] = 'answered';
+      updates[`/users/${incomingCall.receiverId}/incomingCall`] = null;
+
+      try {
+        await update(ref(db), updates);
+        dismiss();
+        router.push(`/call/${incomingCall.id}`);
+      } catch (error) {
+        console.error("Error accepting call:", error);
+      }
+    };
+
+    const handleReject = async () => {
+      const updates: { [key: string]: any } = {};
+      updates[`/calls/${incomingCall.id}/status`] = 'ended';
+      updates[`/users/${incomingCall.receiverId}/incomingCall`] = null;
+
+      try {
+        await update(ref(db), updates);
+        dismiss();
+      } catch (error) {
+        console.error("Error rejecting call:", error);
+      }
+    };
+
+    const { id } = toast({
+      duration: Infinity,
+      description: (
+        <div className="flex items-center gap-4">
+          <Avatar>
+            <AvatarImage src={incomingCall.caller.photoURL} />
+            <AvatarFallback>{incomingCall.caller.displayName.charAt(0)}</AvatarFallback>
+          </Avatar>
+          <div className="flex-grow">
+            <p className="font-bold">{incomingCall.caller.displayName}</p>
+            <p className="text-sm text-muted-foreground">Chamada de voz...</p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="destructive" size="icon" onClick={handleReject}>
+              <PhoneOff className="h-5 w-5" />
+            </Button>
+            <Button variant="default" size="icon" className="bg-green-500 hover:bg-green-600" onClick={handleAccept}>
+              <Phone className="h-5 w-5" />
+            </Button>
+          </div>
+        </div>
+      ),
+    });
+
+    return () => dismiss(id);
+  }, [incomingCall, router, dismiss, toast]);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
@@ -118,7 +190,6 @@ export default function MainLayout({
   return (
     <div className="min-h-screen bg-background flex justify-center">
       <div className="w-full max-w-sm flex flex-col relative">
-        {incomingCall && <IncomingCallNotification call={incomingCall} />}
         <main className={`flex-1 border-x border-border min-h-0 overflow-y-auto ${isMessagesPage || isCallPage ? 'grid grid-rows-[auto,1fr,auto]' : ''}`}>
           {children}
         </main>
