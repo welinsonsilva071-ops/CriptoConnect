@@ -88,7 +88,6 @@ export default function CallPage() {
           if (currentCallData.status !== 'ended') {
             await update(callRef.current, { status: 'ended' });
           }
-           // Ensure incomingCall is cleared for the current user if they are the receiver
           if(currentCallData.receiverId === currentUser.uid) {
              await remove(ref(db, `users/${currentUser.uid}/incomingCall`));
           }
@@ -169,7 +168,7 @@ export default function CallPage() {
         const data = snapshot.val() as CallData;
         setCallData(data);
 
-        if (!data || data.status === 'ended') {
+        if (!snapshot.exists() || data.status === 'ended') {
             hangUp();
             return;
         }
@@ -193,36 +192,29 @@ export default function CallPage() {
         
         const isCaller = data.callerId === currentUser.uid;
 
+        // Caller logic: create offer if none exists
+        if (isCaller && !data.sdp) {
+            setupIceListeners(pc, data.receiverId);
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            await update(snapshot.ref, { type: 'offer', sdp: pc.localDescription?.sdp });
+        }
+
+        // Receiver logic: create answer
         if (data.type === 'offer' && !isCaller && pc.signalingState !== 'have-remote-offer') {
              await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: data.sdp }));
              const answer = await pc.createAnswer();
              await pc.setLocalDescription(answer);
              await update(snapshot.ref, { type: 'answer', sdp: pc.localDescription?.sdp });
              setupIceListeners(pc, data.callerId);
-        } else if (data.type === 'answer' && isCaller && pc.signalingState === 'have-local-offer') {
+        }
+        
+        // Caller logic: set remote answer
+        if (data.type === 'answer' && isCaller && pc.signalingState === 'have-local-offer') {
             await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }));
         }
 
     });
-    
-    // Create offer if this user is the caller and no offer exists
-    const createInitialOffer = async () => {
-        const callSnap = await get(callRef.current);
-        const data = callSnap.val();
-        if (data.callerId === currentUser?.uid && !data.sdp) {
-             if (!peerConnectionRef.current) {
-                await initializePeerConnection();
-            }
-            const pc = peerConnectionRef.current;
-            if (pc) {
-                setupIceListeners(pc, data.receiverId);
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-                await update(callRef.current, { type: 'offer', sdp: pc.localDescription?.sdp });
-            }
-        }
-    };
-    createInitialOffer();
 
     return () => {
         if (callListener) {
@@ -264,8 +256,6 @@ export default function CallPage() {
 
   const toggleSpeaker = () => {
     if (remoteAudioRef.current) {
-        // The 'speaker' sinkId is not standard, this is a best-effort.
-        // Actual speakerphone control is very limited in web APIs.
         const sinkId = isSpeaker ? '' : 'speaker';
         // @ts-ignore
         remoteAudioRef.current.setSinkId(sinkId)
