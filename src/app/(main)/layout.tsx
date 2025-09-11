@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
@@ -54,66 +54,89 @@ export default function MainLayout({
   const [dbUser, setDbUser] = useState<DbUser | null>(null);
   const [incomingCall, setIncomingCall] = useState<Call | null>(null);
   const { toast, dismiss } = useToast();
+  const toastIdRef = useRef<string | null>(null);
 
   const isMessagesPage = pathname.includes('/messages/');
   const isCallPage = pathname.includes('/call/');
 
   useEffect(() => {
-    if (!incomingCall) return;
+    // If there's an incoming call and no toast is currently shown for it
+    if (incomingCall && !toastIdRef.current) {
+      const handleAccept = async () => {
+        if (!incomingCall) return;
+        const updates: { [key: string]: any } = {};
+        updates[`/calls/${incomingCall.id}/status`] = 'answered';
+        updates[`/users/${incomingCall.receiverId}/incomingCall`] = null;
 
-    const handleAccept = async () => {
-      const updates: { [key: string]: any } = {};
-      updates[`/calls/${incomingCall.id}/status`] = 'answered';
-      updates[`/users/${incomingCall.receiverId}/incomingCall`] = null;
+        try {
+          await update(ref(db), updates);
+          router.push(`/call/${incomingCall.id}`);
+        } catch (error) {
+          console.error("Error accepting call:", error);
+        } finally {
+          if (toastIdRef.current) {
+            dismiss(toastIdRef.current);
+            toastIdRef.current = null;
+          }
+        }
+      };
 
-      try {
-        await update(ref(db), updates);
-        dismiss();
-        router.push(`/call/${incomingCall.id}`);
-      } catch (error) {
-        console.error("Error accepting call:", error);
-      }
-    };
+      const handleReject = async () => {
+        if (!incomingCall) return;
+        const updates: { [key: string]: any } = {};
+        updates[`/calls/${incomingCall.id}/status`] = 'ended';
+        updates[`/users/${incomingCall.receiverId}/incomingCall`] = null;
+        try {
+          await update(ref(db), updates);
+        } catch (error) {
+          console.error("Error rejecting call:", error);
+        } finally {
+          if (toastIdRef.current) {
+            dismiss(toastIdRef.current);
+            toastIdRef.current = null;
+          }
+        }
+      };
 
-    const handleReject = async () => {
-      const updates: { [key: string]: any } = {};
-      updates[`/calls/${incomingCall.id}/status`] = 'ended';
-      updates[`/users/${incomingCall.receiverId}/incomingCall`] = null;
-
-      try {
-        await update(ref(db), updates);
-        dismiss();
-      } catch (error) {
-        console.error("Error rejecting call:", error);
-      }
-    };
-
-    const { id } = toast({
-      duration: Infinity,
-      description: (
-        <div className="flex items-center gap-4">
-          <Avatar>
-            <AvatarImage src={incomingCall.caller.photoURL} />
-            <AvatarFallback>{incomingCall.caller.displayName.charAt(0)}</AvatarFallback>
-          </Avatar>
-          <div className="flex-grow">
-            <p className="font-bold">{incomingCall.caller.displayName}</p>
-            <p className="text-sm text-muted-foreground">Chamada de voz...</p>
+      const { id } = toast({
+        duration: Infinity,
+        description: (
+          <div className="flex items-center gap-4">
+            <Avatar>
+              <AvatarImage src={incomingCall.caller.photoURL} />
+              <AvatarFallback>{incomingCall.caller.displayName.charAt(0)}</AvatarFallback>
+            </Avatar>
+            <div className="flex-grow">
+              <p className="font-bold">{incomingCall.caller.displayName}</p>
+              <p className="text-sm text-muted-foreground">Chamada de voz...</p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="destructive" size="icon" onClick={handleReject}>
+                <PhoneOff className="h-5 w-5" />
+              </Button>
+              <Button variant="default" size="icon" className="bg-green-500 hover:bg-green-600" onClick={handleAccept}>
+                <Phone className="h-5 w-5" />
+              </Button>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <Button variant="destructive" size="icon" onClick={handleReject}>
-              <PhoneOff className="h-5 w-5" />
-            </Button>
-            <Button variant="default" size="icon" className="bg-green-500 hover:bg-green-600" onClick={handleAccept}>
-              <Phone className="h-5 w-5" />
-            </Button>
-          </div>
-        </div>
-      ),
-    });
+        ),
+        onDismiss: () => {
+          toastIdRef.current = null;
+        },
+        onAutoClose: () => {
+          toastIdRef.current = null;
+        },
+      });
+      toastIdRef.current = id;
+    } 
+    // If there is no incoming call, but there's a toast, dismiss it.
+    else if (!incomingCall && toastIdRef.current) {
+      dismiss(toastIdRef.current);
+      toastIdRef.current = null;
+    }
 
-    return () => dismiss(id);
   }, [incomingCall, router, dismiss, toast]);
+
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {

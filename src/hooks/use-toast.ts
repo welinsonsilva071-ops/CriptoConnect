@@ -17,6 +17,8 @@ type ToasterToast = ToastProps & {
   title?: React.ReactNode
   description?: React.ReactNode
   action?: ToastActionElement
+  onDismiss?: (toast: ToasterToast) => void
+  onAutoClose?: (toast: ToasterToast) => void
 }
 
 const actionTypes = {
@@ -97,9 +99,14 @@ export const reducer = (state: State, action: Action): State => {
       // ! Side effects ! - This could be extracted into a dismissToast() action,
       // but I'll keep it here for simplicity
       if (toastId) {
+        const toast = state.toasts.find((t) => t.id === toastId);
+        if (toast) {
+            toast.onDismiss?.(toast);
+        }
         addToRemoveQueue(toastId)
       } else {
         state.toasts.forEach((toast) => {
+          toast.onDismiss?.(toast);
           addToRemoveQueue(toast.id)
         })
       }
@@ -153,16 +160,18 @@ function toast({ ...props }: Toast) {
     })
   const dismiss = () => dispatch({ type: "DISMISS_TOAST", toastId: id })
 
-  dispatch({
-    type: "ADD_TOAST",
-    toast: {
+  const toast = {
       ...props,
       id,
       open: true,
-      onOpenChange: (open) => {
+      onOpenChange: (open: boolean) => {
         if (!open) dismiss()
       },
-    },
+  };
+
+  dispatch({
+    type: "ADD_TOAST",
+    toast
   })
 
   return {
