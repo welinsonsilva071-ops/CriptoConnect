@@ -222,10 +222,10 @@ export default function CallPage() {
       }
     };
     
-    const unsubscribe = setupCall();
+    const unsubscribePromise = setupCall();
 
     return () => {
-        unsubscribe.then(cleanup => cleanup && cleanup());
+        unsubscribePromise.then(cleanup => cleanup && cleanup());
     }
 
   }, [currentUser, callId, isMuted, toast, otherUser]);

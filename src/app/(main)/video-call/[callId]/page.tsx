@@ -12,6 +12,22 @@ import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
 
+type CallData = {
+  callerId: string;
+  receiverId: string;
+  status: 'ringing' | 'answered' | 'ended';
+  offer?: RTCSessionDescriptionInit;
+  answer?: RTCSessionDescriptionInit;
+};
+
+const iceServers = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ],
+};
+
+
 export default function VideoCallPage() {
   const [currentUser] = useAuthState(auth);
   const router = useRouter();
@@ -215,32 +231,22 @@ export default function VideoCallPage() {
 
   return (
     <div className="bg-black h-full flex flex-col text-white relative">
-      {/* Remote Video - Top Half */}
-      <div className="flex-1 w-full h-1/2 bg-gray-900 relative">
-        <video 
-            ref={remoteVideoRef} 
-            autoPlay 
-            playsInline 
-            className="w-full h-full object-cover"
-        />
-        <div className="absolute top-2 left-2 p-2 bg-black/50 rounded-md">
-            <p>Participante</p>
-        </div>
-      </div>
-
-      {/* Local Video - Bottom Half */}
-      <div className="flex-1 w-full h-1/2 bg-gray-800 relative">
-        <video 
-            ref={localVideoRef} 
-            autoPlay 
-            playsInline 
-            muted 
-            className="w-full h-full object-cover"
-        />
-         <div className="absolute top-2 left-2 p-2 bg-black/50 rounded-md">
-            <p>Você</p>
-        </div>
-      </div>
+      {/* Remote Video - Full screen background */}
+      <video 
+          ref={remoteVideoRef} 
+          autoPlay 
+          playsInline 
+          className="w-full h-full object-cover absolute top-0 left-0"
+      />
+      
+      {/* Local Video - Picture-in-picture style */}
+      <video 
+          ref={localVideoRef} 
+          autoPlay 
+          playsInline 
+          muted 
+          className="w-1/4 max-w-[150px] aspect-[9/16] object-cover rounded-lg absolute top-4 right-4 border-2 border-white/50"
+      />
 
 
        {!hasPermissions && (
