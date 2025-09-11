@@ -201,14 +201,28 @@ export default function CallPage() {
              setupIceListeners(pc, data.callerId);
         } else if (data.type === 'answer' && isCaller && pc.signalingState === 'have-local-offer') {
             await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }));
-        } else if (data.status === 'answered' && isCaller && pc.signalingState === 'stable') {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            await update(snapshot.ref, { type: 'offer', sdp: pc.localDescription?.sdp });
-            setupIceListeners(pc, data.receiverId);
         }
 
     });
+    
+    // Create offer if this user is the caller and no offer exists
+    const createInitialOffer = async () => {
+        const callSnap = await get(callRef.current);
+        const data = callSnap.val();
+        if (data.callerId === currentUser?.uid && !data.sdp) {
+             if (!peerConnectionRef.current) {
+                await initializePeerConnection();
+            }
+            const pc = peerConnectionRef.current;
+            if (pc) {
+                setupIceListeners(pc, data.receiverId);
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                await update(callRef.current, { type: 'offer', sdp: pc.localDescription?.sdp });
+            }
+        }
+    };
+    createInitialOffer();
 
     return () => {
         if (callListener) {
