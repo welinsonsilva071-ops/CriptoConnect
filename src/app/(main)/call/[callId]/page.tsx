@@ -86,6 +86,23 @@ export default function CallPage() {
   useEffect(() => {
     if (!isMounted || !currentUser || !callId) return;
 
+    let callListener: any;
+    let otherIceCandidatesRef: any;
+    let iceListener: any;
+
+    const cleanup = () => {
+        if (peerConnectionRef.current) {
+            peerConnectionRef.current.close();
+            peerConnectionRef.current = null;
+        }
+        if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach(track => track.stop());
+            localStreamRef.current = null;
+        }
+        if (callListener) off(callRef.current, 'value', callListener);
+        if (otherIceCandidatesRef && iceListener) off(otherIceCandidatesRef, 'value', iceListener);
+    };
+
     const initialize = async () => {
         try {
             localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -120,11 +137,12 @@ export default function CallPage() {
         };
     };
 
-    const callListener = onValue(callRef.current, async (snapshot) => {
+    callListener = onValue(callRef.current, async (snapshot) => {
         const data = snapshot.val() as CallData;
         
         if (!snapshot.exists() || data.status === 'ended') {
-            hangUp();
+            cleanup();
+            if (router) router.push('/');
             return;
         }
 
@@ -146,44 +164,44 @@ export default function CallPage() {
         const pc = peerConnectionRef.current;
         if (!pc) return;
 
-        // Setup ICE candidates listeners
-        const iceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`);
-        const otherIceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${otherId}`);
-        pc.onicecandidate = event => {
-            if (event.candidate) {
-                push(iceCandidatesRef, event.candidate.toJSON());
-            }
-        };
-        onValue(otherIceCandidatesRef, (iceSnapshot) => {
-            if (iceSnapshot.exists()) {
-                iceSnapshot.forEach((childSnapshot) => {
-                    if (pc.signalingState !== 'closed') {
-                       pc.addIceCandidate(new RTCIceCandidate(childSnapshot.val())).catch(e => console.error("Error adding ICE", e));
-                    }
-                    remove(childSnapshot.ref);
-                });
-            }
-        });
+        // Setup ICE candidates listeners only once
+        if (!iceListener) {
+            const iceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`);
+            otherIceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${otherId}`);
+            
+            pc.onicecandidate = event => {
+                if (event.candidate) {
+                    push(iceCandidatesRef, event.candidate.toJSON());
+                }
+            };
+            iceListener = onValue(otherIceCandidatesRef, (iceSnapshot) => {
+                if (iceSnapshot.exists()) {
+                    iceSnapshot.forEach((childSnapshot) => {
+                         if (pc.signalingState !== 'closed') {
+                            pc.addIceCandidate(new RTCIceCandidate(childSnapshot.val())).catch(e => console.error("Error adding ICE", e));
+                         }
+                        remove(childSnapshot.ref);
+                    });
+                }
+            });
+        }
 
-
-        // Caller creates offer
+        // State machine for signaling
         if (isCaller && !data.offer && pc.signalingState === 'stable') {
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             await update(snapshot.ref, { offer: offer });
         }
 
-        // Receiver creates answer
         if (!isCaller && data.offer && !data.answer) {
              if (pc.signalingState !== 'have-remote-offer') {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
              }
              const answer = await pc.createAnswer();
              await pc.setLocalDescription(answer);
-             await update(snapshot.ref, { answer: answer });
+             await update(snapshot.ref, { answer: answer, status: 'answered' });
         }
         
-        // Caller sets remote answer
         if (isCaller && data.answer && pc.signalingState === 'have-local-offer') {
             await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
         }
@@ -191,11 +209,10 @@ export default function CallPage() {
     });
 
     return () => {
-      off(callRef.current, 'value', callListener);
-      hangUp(false);
+      cleanup();
     };
 
-  }, [isMounted, currentUser, callId, hangUp, toast, otherUser]);
+  }, [isMounted, currentUser, callId, hangUp, toast, otherUser, router]);
 
 
   useEffect(() => {
@@ -292,5 +309,3 @@ export default function CallPage() {
     </div>
   );
 }
-
-    
