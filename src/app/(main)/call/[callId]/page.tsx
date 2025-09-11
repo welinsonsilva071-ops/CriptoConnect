@@ -127,6 +127,10 @@ export default function CallPage() {
             event.streams[0].getTracks().forEach(track => {
                 remoteStreamRef.current?.addTrack(track);
             });
+            // Re-assign the stream to the audio element in case it wasn't ready before
+            if (remoteAudioRef.current && remoteStreamRef.current) {
+               remoteAudioRef.current.srcObject = remoteStreamRef.current;
+            }
         };
     };
 
@@ -297,5 +301,3 @@ export default function CallPage() {
     </div>
   );
 }
-
-    
