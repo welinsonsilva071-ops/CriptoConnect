@@ -8,7 +8,7 @@ import { auth, db } from '@/lib/firebase';
 import { ref, onValue, off, update, remove, push, get, serverTimestamp } from 'firebase/database';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Mic, MicOff, PhoneOff, Volume2 } from 'lucide-react';
+import { Mic, MicOff, PhoneOff, Volume2, VolumeX } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
@@ -44,7 +44,7 @@ export default function CallPage() {
   const [otherUser, setOtherUser] = useState<OtherUser | null>(null);
   const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
-  const [isSpeaker, setIsSpeaker] = useState(false);
+  const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const [hasMicPermission, setHasMicPermission] = useState(true);
   const [isMounted, setIsMounted] = useState(false);
 
@@ -79,25 +79,17 @@ export default function CallPage() {
 
   useEffect(() => {
     setIsMounted(true);
-    // Cleanup function when component unmounts
-    return () => {
-        if (peerConnectionRef.current) {
-            peerConnectionRef.current.close();
-        }
-        if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach(track => track.stop());
-        }
-        off(callRef.current);
-    };
   }, []);
 
   useEffect(() => {
     if (!isMounted || !currentUser || !callId) return;
 
-    const initializePeerConnection = async () => {
+    let pc: RTCPeerConnection;
+
+    const initialize = async () => {
         try {
-            localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
-            setHasMicPermission(true);
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            localStreamRef.current = stream;
         } catch (error) {
             console.error("Mic permission denied:", error);
             setHasMicPermission(false);
@@ -106,10 +98,10 @@ export default function CallPage() {
                 title: 'Permissão de Microfone Negada',
                 description: 'Você precisa permitir o acesso ao microfone para fazer chamadas.'
             });
-            return null;
+            return;
         }
 
-        const pc = new RTCPeerConnection(iceServers);
+        pc = new RTCPeerConnection(iceServers);
         peerConnectionRef.current = pc;
 
         localStreamRef.current.getTracks().forEach(track => {
@@ -118,24 +110,39 @@ export default function CallPage() {
 
         pc.ontrack = (event) => {
             if (remoteAudioRef.current && event.streams[0]) {
+                // Attach remote stream directly to the audio element
                 remoteAudioRef.current.srcObject = event.streams[0];
             }
         };
 
-        return pc;
+        setupCallListener();
     };
 
-    const callListener = onValue(callRef.current, async (snapshot) => {
-        const data = snapshot.val() as CallData;
-        
-        if (!snapshot.exists() || data.status === 'ended') {
-            if (peerConnectionRef.current?.signalingState !== 'closed') {
-                 hangUp(true);
-            }
+    const setupCallListener = () => {
+        onValue(callRef.current, handleCallStateChange, (error) => {
+            console.error("Firebase onValue error:", error);
+            hangUp(true);
+        });
+    };
+
+    const handleCallStateChange = async (snapshot: any) => {
+        if (!snapshot.exists()) {
+            toast({ title: 'Chamada não encontrada', description: 'Esta chamada não existe mais.'});
+            hangUp(true);
             return;
         }
 
+        const data = snapshot.val() as CallData;
         setCallData(data);
+
+        if (data.status === 'ended') {
+            if(peerConnectionRef.current?.signalingState !== 'closed') {
+               toast({ title: 'Chamada Encerrada' });
+               hangUp(true);
+            }
+            return;
+        }
+        
         const isCaller = data.callerId === currentUser.uid;
         const otherId = isCaller ? data.receiverId : data.callerId;
 
@@ -147,14 +154,10 @@ export default function CallPage() {
             });
         }
         
-        if (!peerConnectionRef.current) {
-            await initializePeerConnection();
-        }
-        
         const pc = peerConnectionRef.current;
         if (!pc) return;
 
-        // Centralized ICE Candidate Handling
+        // Setup ICE candidate listeners
         pc.onicecandidate = event => {
             if (event.candidate) {
                 const iceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`);
@@ -162,53 +165,52 @@ export default function CallPage() {
             }
         };
 
-        const iceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${otherId}`);
-        onValue(iceCandidatesRef, (snapshot) => {
-            snapshot.forEach((childSnapshot) => {
+        const otherIceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${otherId}`);
+        onValue(otherIceCandidatesRef, (iceSnapshot) => {
+            iceSnapshot.forEach((childSnapshot) => {
                  if (pc.signalingState !== 'closed') {
                     pc.addIceCandidate(new RTCIceCandidate(childSnapshot.val())).catch(e => console.error("Error adding received ICE candidate", e));
                  }
                 remove(childSnapshot.ref);
             });
-        }, { onlyOnce: false }); // Listen continuously for candidates
+        });
 
 
-        // Signaling State Machine
-        if (isCaller && !data.offer) {
-            if (pc.signalingState === 'stable') {
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-                await update(snapshot.ref, { offer });
-            }
+        // --- Signaling Logic ---
+        if (isCaller && pc.signalingState === 'stable' && !data.offer) {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            await update(snapshot.ref, { offer });
         }
-
-        if (data.offer && pc.signalingState !== 'have-remote-offer' && !isCaller) {
-             await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-        }
-
-        if (!isCaller && data.offer && !data.answer) {
-             if (pc.signalingState === 'have-remote-offer') {
+        
+        if (data.offer && pc.signalingState === 'stable') {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+            if (!isCaller) {
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
                 await update(snapshot.ref, { answer, status: 'answered' });
-             }
+            }
         }
         
-        if (isCaller && data.answer && pc.signalingState !== 'stable') {
-             if(pc.remoteDescription?.type !== 'answer') {
-                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-             }
+        if (data.answer && pc.signalingState === 'have-remote-offer') {
+             await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
         }
-
-    }, (error) => {
-        console.error("Firebase onValue error:", error);
-    });
+    };
+    
+    initialize();
 
     return () => {
-      off(callRef.current, 'value', callListener);
+        off(callRef.current);
+        if (peerConnectionRef.current) {
+            peerConnectionRef.current.close();
+            peerConnectionRef.current = null;
+        }
+        if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach(track => track.stop());
+            localStreamRef.current = null;
+        }
     };
-
-  }, [isMounted, currentUser, callId, hangUp, toast, otherUser, router]);
+  }, [isMounted, currentUser, callId, hangUp, toast, router]);
 
 
   useEffect(() => {
@@ -239,10 +241,7 @@ export default function CallPage() {
   };
 
   const toggleSpeaker = () => {
-    // Speaker toggle is complex and varies by browser.
-    // This is a simplified placeholder.
-    setIsSpeaker(prev => !prev);
-    console.log("Speaker toggle is not fully implemented.");
+    setIsSpeakerOn(prev => !prev);
   };
   
   const DisplayStatus = () => {
@@ -295,13 +294,15 @@ export default function CallPage() {
           <PhoneOff />
         </Button>
         <Button variant="secondary" size="lg" className="rounded-full h-16 w-16" onClick={toggleSpeaker} disabled={!hasMicPermission}>
-          <Volume2 />
+          {isSpeakerOn ? <Volume2 /> : <VolumeX />}
         </Button>
       </div>
-      <audio ref={remoteAudioRef} autoPlay playsInline muted={isSpeaker ? false : undefined} />
+      {/* The 'muted' property on the audio tag is crucial to prevent echo. 
+          'isSpeakerOn' will control if the audio output is silent, simulating speaker off.
+          It does not mute the microphone stream being sent. */}
+      <audio ref={remoteAudioRef} autoPlay playsInline muted={!isSpeakerOn} />
     </div>
   );
 }
     
 
-    
