@@ -11,7 +11,6 @@ import { useToast } from '@/hooks/use-toast';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import IncomingCallNotification from '@/components/calls/incoming-call-notification';
 
 type DbUser = {
   uid: string;
@@ -126,7 +125,6 @@ export default function MainLayout({
   return (
     <div className="min-h-screen bg-background flex justify-center">
       <div className="w-full max-w-sm flex flex-col relative">
-        {user && <IncomingCallNotification userId={user.uid} />}
         <main className={`flex-1 border-x border-border min-h-0 overflow-y-auto ${isMessagesPage ? 'grid grid-rows-[auto,1fr,auto]' : ''}`}>
           {children}
         </main>

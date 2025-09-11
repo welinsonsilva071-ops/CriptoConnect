@@ -9,22 +9,11 @@ import { ref, onValue, off, push, serverTimestamp, get, set, update } from 'fire
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ArrowLeft, Send, Phone } from 'lucide-react';
+import { ArrowLeft, Send } from 'lucide-react';
 import Link from 'next/link';
 import MessageBubble from '@/components/messages/message-bubble';
 import startChat from '@/lib/start-chat';
 import { useToast } from '@/hooks/use-toast';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
 
 type Message = {
   id: string;
@@ -134,47 +123,6 @@ export default function ChatPage() {
     }
   };
 
-  const handleInitiateCall = async () => {
-    if (!currentUser || !otherUser) return;
-    
-    const callId = push(ref(db, 'calls')).key;
-    if (!callId) {
-      toast({ variant: "destructive", title: "Error", description: "Could not create a call." });
-      return;
-    }
-
-    const currentUserSnap = await get(ref(db, `users/${currentUser.uid}`));
-    const currentUserInfo = currentUserSnap.val();
-
-    const callData = {
-        callerId: currentUser.uid,
-        receiverId: otherUser.uid,
-        callerInfo: {
-            displayName: currentUserInfo.displayName,
-            photoURL: currentUserInfo.photoURL || ''
-        },
-        status: 'dialing',
-        createdAt: serverTimestamp(),
-    };
-
-    try {
-        const updates: { [key: string]: any } = {};
-        updates[`/calls/${callId}`] = callData;
-        updates[`/users/${otherUser.uid}/incomingCall`] = { callId: callId, from: currentUser.uid };
-        
-        await update(ref(db), updates);
-
-        router.push(`/call/${callId}`);
-    } catch (error) {
-        console.error("Error initiating call:", error);
-        toast({
-            variant: 'destructive',
-            title: "Error",
-            description: "Could not initiate call. Please check your database rules."
-        });
-    }
-  }
-
   if (loading) {
     return <div className="flex items-center justify-center h-full">Carregando conversa...</div>;
   }
@@ -198,28 +146,6 @@ export default function ChatPage() {
             </>
           )}
         </div>
-        
-        {otherUser && (
-           <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <Phone />
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Chamada de Voz</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Você quer fazer uma chamada de voz para {otherUser.displayName}?
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                <AlertDialogAction onClick={handleInitiateCall}>Ligar</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        )}
       </header>
 
       <main className="flex-1 overflow-y-auto p-4 space-y-4">
