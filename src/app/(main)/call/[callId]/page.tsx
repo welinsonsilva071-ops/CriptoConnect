@@ -50,7 +50,6 @@ export default function CallPage() {
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
-  const remoteStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   
   const callRef = useRef(ref(db, `calls/${callId}`));
@@ -118,16 +117,11 @@ export default function CallPage() {
       localStreamRef.current.getTracks().forEach(track => {
           pc.addTrack(track, localStreamRef.current!);
       });
-
-      remoteStreamRef.current = new MediaStream();
-      if (remoteAudioRef.current) {
-          remoteAudioRef.current.srcObject = remoteStreamRef.current;
-      }
       
       pc.ontrack = (event) => {
-          event.streams[0].getTracks().forEach(track => {
-              remoteStreamRef.current?.addTrack(track);
-          });
+          if (remoteAudioRef.current && event.streams[0]) {
+              remoteAudioRef.current.srcObject = event.streams[0];
+          }
       };
       
       pc.onicecandidate = event => {
@@ -314,5 +308,4 @@ export default function CallPage() {
     </div>
   );
 }
-
     
