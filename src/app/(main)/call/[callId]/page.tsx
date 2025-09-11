@@ -51,8 +51,10 @@ export default function CallPage() {
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  
+  const callRef = useRef(ref(db, `calls/${callId}`));
 
-  const hangUp = useCallback(async () => {
+  const cleanUp = useCallback(() => {
     if (peerConnectionRef.current) {
         peerConnectionRef.current.onicecandidate = null;
         peerConnectionRef.current.ontrack = null;
@@ -63,23 +65,28 @@ export default function CallPage() {
         localStreamRef.current.getTracks().forEach(track => track.stop());
         localStreamRef.current = null;
     }
+  }, []);
 
+  const hangUp = useCallback(async () => {
+    cleanUp();
     if (callId && currentUser) {
-      const callRef = ref(db, `calls/${callId}`);
-      const callSnap = await get(callRef);
+      const callSnap = await get(callRef.current);
       if (callSnap.exists() && callSnap.val().status !== 'ended') {
-          await update(callRef, { status: 'ended' });
+          await update(callRef.current, { status: 'ended' });
       }
-      await remove(ref(db, `users/${currentUser.uid}/incomingCall`));
+      // Ensure incomingCall is cleared for the current user if they are the receiver
+      const currentCallData = callSnap.val();
+      if(currentCallData && currentCallData.receiverId === currentUser.uid) {
+         await remove(ref(db, `users/${currentUser.uid}/incomingCall`));
+      }
     }
     router.push('/');
-  }, [callId, currentUser, router]);
+  }, [callId, currentUser, router, cleanUp]);
 
 
   useEffect(() => {
     if (!currentUser || !callId) return;
 
-    const callRef = ref(db, `calls/${callId}`);
     let iceCandidateListeners: any[] = [];
     
     const initialize = async () => {
@@ -114,7 +121,7 @@ export default function CallPage() {
         };
     };
 
-    const callListener = onValue(callRef, async (snapshot) => {
+    const callListener = onValue(callRef.current, async (snapshot) => {
         const data = snapshot.val() as CallData;
         setCallData(data);
 
@@ -142,7 +149,7 @@ export default function CallPage() {
             await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: data.sdp }));
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
-            await update(callRef, { type: 'answer', sdp: pc.localDescription?.sdp });
+            await update(callRef.current, { type: 'answer', sdp: pc.localDescription?.sdp });
         } else if (data.type === 'answer' && data.callerId === currentUser.uid && pc.signalingState !== 'stable') {
             await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }));
         }
@@ -150,7 +157,7 @@ export default function CallPage() {
         if (data.status === 'answered' && data.callerId === currentUser.uid && !pc.currentRemoteDescription) {
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
-            await update(callRef, { type: 'offer', sdp: pc.localDescription?.sdp });
+            await update(callRef.current, { type: 'offer', sdp: pc.localDescription?.sdp });
         }
         
         // Setup ICE candidate listeners
@@ -164,8 +171,8 @@ export default function CallPage() {
         const iceListener = onValue(otherUserIceCandidatesRef, (snapshot) => {
             snapshot.forEach((childSnapshot) => {
                 const candidate = childSnapshot.val();
-                if(pc.signalingState !== 'closed') {
-                    pc.addIceCandidate(new RTCIceCandidate(candidate));
+                if(pc.signalingState !== 'closed' && candidate) {
+                    pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.error("Error adding received ICE candidate", e));
                 }
             });
         });
@@ -173,12 +180,12 @@ export default function CallPage() {
     });
 
     return () => {
-        off(callRef, 'value', callListener);
+        off(callRef.current, 'value', callListener);
         iceCandidateListeners.forEach(item => off(item.ref, 'value', item.listener));
-        hangUp();
+        cleanUp();
     };
 
-  }, [currentUser, callId, hangUp, toast]);
+  }, [currentUser, callId, hangUp, toast, cleanUp]);
 
 
   useEffect(() => {
@@ -251,13 +258,13 @@ export default function CallPage() {
 
 
       <div className="flex items-center justify-center gap-4">
-        <Button variant="secondary" size="lg" className="rounded-full h-16 w-16" onClick={toggleMute}>
+        <Button variant="secondary" size="lg" className="rounded-full h-16 w-16" onClick={toggleMute} disabled={!hasMicPermission}>
           {isMuted ? <MicOff /> : <Mic />}
         </Button>
         <Button variant="destructive" size="lg" className="rounded-full h-20 w-20" onClick={hangUp}>
           <PhoneOff />
         </Button>
-        <Button variant="secondary" size="lg" className="rounded-full h-16 w-16" onClick={toggleSpeaker}>
+        <Button variant="secondary" size="lg" className="rounded-full h-16 w-16" onClick={toggleSpeaker} disabled={!hasMicPermission}>
           <Volume2 />
         </Button>
       </div>
