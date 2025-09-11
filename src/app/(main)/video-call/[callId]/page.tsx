@@ -48,7 +48,6 @@ export default function VideoCallPage() {
   
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
-  const remoteStreamRef = useRef<MediaStream | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const iceCandidateQueue = useRef<RTCIceCandidate[]>([]);
@@ -94,7 +93,7 @@ export default function VideoCallPage() {
     return () => {
         off(callDbRef, 'value', callListener);
         window.removeEventListener('beforeunload', hangUp);
-        hangUp();
+        // hangUp() foi movido para o listener 'beforeunload' para evitar encerramentos prematuros
     }
   }, [callId, hangUp, toast]);
 
@@ -165,7 +164,7 @@ export default function VideoCallPage() {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
-                await update(snapshot.ref, { answer });
+                await update(snapshot.ref, { answer, status: 'answered' }); // Status é 'answered' aqui
                 iceCandidateQueue.current.forEach(candidate => pc.addIceCandidate(candidate).catch(e => console.error("Error adding queued ICE candidate", e)));
                 iceCandidateQueue.current = [];
             } else if (data.answer && pc.signalingState === 'have-local-offer') { // Caller logic
@@ -280,3 +279,5 @@ export default function VideoCallPage() {
     </div>
   );
 }
+
+    
