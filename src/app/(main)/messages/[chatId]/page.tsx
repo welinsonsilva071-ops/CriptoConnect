@@ -5,11 +5,11 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from '@/lib/firebase';
-import { ref, onValue, off, push, serverTimestamp, get, set, update } from 'firebase/database';
+import { ref, onValue, off, push, serverTimestamp, set, update } from 'firebase/database';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ArrowLeft, Send } from 'lucide-react';
+import { ArrowLeft, Send, Phone } from 'lucide-react';
 import Link from 'next/link';
 import MessageBubble from '@/components/messages/message-bubble';
 import startChat from '@/lib/start-chat';
@@ -53,7 +53,6 @@ export default function ChatPage() {
 
     const otherUserId = chatId.replace(currentUser.uid, '').replace('_', '');
     
-    // Ensure the chat exists before listening for messages
     startChat(currentUser.uid, otherUserId).catch(err => {
       console.error(err);
       toast({
@@ -98,6 +97,35 @@ export default function ChatPage() {
     };
 
   }, [currentUser, chatId, router, toast]);
+
+  const handleStartCall = async () => {
+    if (!currentUser || !otherUser) return;
+    
+    const callId = push(ref(db, 'calls')).key;
+    if (!callId) {
+        toast({ variant: 'destructive', title: 'Error', description: 'Could not create call.' });
+        return;
+    }
+
+    const callData = {
+        callerId: currentUser.uid,
+        receiverId: otherUser.uid,
+        status: 'ringing',
+        createdAt: serverTimestamp(),
+    };
+
+    const updates: { [key: string]: any } = {};
+    updates[`/calls/${callId}`] = callData;
+    updates[`/users/${otherUser.uid}/incomingCall`] = callId;
+
+    try {
+        await update(ref(db), updates);
+        router.push(`/call/${callId}`);
+    } catch (error) {
+        console.error("Error starting call:", error);
+        toast({ variant: 'destructive', title: 'Error', description: 'Could not start call.' });
+    }
+  };
   
 
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -146,6 +174,9 @@ export default function ChatPage() {
             </>
           )}
         </div>
+        <Button variant="ghost" size="icon" onClick={handleStartCall}>
+          <Phone />
+        </Button>
       </header>
 
       <main className="flex-1 overflow-y-auto p-4 space-y-4">

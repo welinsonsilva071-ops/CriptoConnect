@@ -3,14 +3,15 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { onAuthStateChanged, User, signOut, deleteUser } from 'firebase/auth';
+import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
-import { ref, remove, onValue, off } from 'firebase/database';
-import { MessageCircle, Users, Library, History, Home } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import { ref, onValue, off, get } from 'firebase/database';
+import { MessageCircle, Users, Library, History } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import IncomingCallNotification from '@/components/calls/incoming-call-notification';
+import type { Call } from '@/components/calls/incoming-call-notification';
 
 type DbUser = {
   uid: string;
@@ -34,12 +35,13 @@ export default function MainLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [dbUser, setDbUser] = useState<DbUser | null>(null);
+  const [incomingCall, setIncomingCall] = useState<Call | null>(null);
 
   const isMessagesPage = pathname.includes('/messages/');
+  const isCallPage = pathname.includes('/call/');
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
@@ -52,9 +54,28 @@ export default function MainLayout({
         }
         
         const userDbRef = ref(db, `users/${currentUser.uid}`);
-        const unsubscribeDb = onValue(userDbRef, (snapshot) => {
+        const unsubscribeDb = onValue(userDbRef, async (snapshot) => {
           if (snapshot.exists()) {
-            setDbUser({ ...snapshot.val(), uid: currentUser.uid });
+            const userData = snapshot.val();
+            setDbUser({ ...userData, uid: currentUser.uid });
+            
+            if (userData.incomingCall) {
+              const callSnap = await get(ref(db, `calls/${userData.incomingCall}`));
+              if (callSnap.exists()) {
+                const callData = callSnap.val();
+                if (callData.status === 'ringing') {
+                   const callerSnap = await get(ref(db, `users/${callData.callerId}`));
+                   if(callerSnap.exists()){
+                     setIncomingCall({ id: userData.incomingCall, ...callData, caller: callerSnap.val() });
+                   }
+                } else {
+                   setIncomingCall(null);
+                }
+              }
+            } else {
+              setIncomingCall(null);
+            }
+
             setLoading(false);
           } else {
             router.push('/complete-profile');
@@ -69,6 +90,7 @@ export default function MainLayout({
       } else {
         setUser(null);
         setDbUser(null);
+        setIncomingCall(null);
         router.push('/login');
         setLoading(false);
       }
@@ -76,36 +98,7 @@ export default function MainLayout({
 
     return () => unsubscribeAuth();
   }, [router]);
-
-  const handleLogout = async () => {
-    await signOut(auth);
-    router.push('/login');
-  };
-
-  const handleDeleteAccount = async () => {
-    if (user) {
-      const confirmation = confirm("Are you sure you want to delete your account? This action is irreversible.");
-      if (confirmation) {
-        try {
-          await remove(ref(db, `users/${user.uid}`));
-          await deleteUser(user);
-          toast({
-            title: "Account Deleted",
-            description: "Your account has been successfully deleted.",
-          });
-          router.push('/signup');
-        } catch (error) {
-          console.error("Error deleting account:", error);
-          toast({
-            variant: "destructive",
-            title: "Error",
-            description: "Could not delete account. You may need to log in again to confirm.",
-          });
-        }
-      }
-    }
-  };
-
+  
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -125,10 +118,11 @@ export default function MainLayout({
   return (
     <div className="min-h-screen bg-background flex justify-center">
       <div className="w-full max-w-sm flex flex-col relative">
-        <main className={`flex-1 border-x border-border min-h-0 overflow-y-auto ${isMessagesPage ? 'grid grid-rows-[auto,1fr,auto]' : ''}`}>
+        {incomingCall && <IncomingCallNotification call={incomingCall} />}
+        <main className={`flex-1 border-x border-border min-h-0 overflow-y-auto ${isMessagesPage || isCallPage ? 'grid grid-rows-[auto,1fr,auto]' : ''}`}>
           {children}
         </main>
-        {!isMessagesPage && (
+        {!isMessagesPage && !isCallPage && (
            <footer className="sticky bottom-0 bg-background border-t border-border">
             <nav className="flex justify-around items-center h-16">
               {navItems.map((item) => {
