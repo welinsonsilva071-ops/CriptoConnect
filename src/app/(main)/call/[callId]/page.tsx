@@ -223,7 +223,7 @@ export default function CallPage() {
         iceValueListeners.forEach(({ ref, listener }) => off(ref, 'value', listener));
     }
 
-  }, [currentUser, callId, otherUser]);
+  }, [currentUser, callId, otherUser, toast]);
 
 
   useEffect(() => {
