@@ -58,7 +58,7 @@ export default function MainLayout({
   const isMessagesPage = pathname.includes('/messages/');
   const isCallPage = pathname.includes('/call/');
 
-    useEffect(() => {
+  useEffect(() => {
     if (!incomingCall) return;
 
     const handleAccept = async () => {
