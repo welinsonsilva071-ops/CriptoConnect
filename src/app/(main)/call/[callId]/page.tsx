@@ -50,8 +50,12 @@ export default function CallPage() {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
+  const hasHungUp = useRef(false);
   
   const hangUp = useCallback(async () => {
+     if (hasHungUp.current) return;
+     hasHungUp.current = true;
+
     if (pcRef.current) {
         if (pcRef.current.signalingState !== 'closed') {
             pcRef.current.close();
@@ -83,7 +87,7 @@ export default function CallPage() {
     const callDbRef = ref(db, `calls/${callId}`);
 
     const callStatusListener = onValue(callDbRef, (snapshot) => {
-        if (!snapshot.exists() || snapshot.val().status === 'ended') {
+        if ((!snapshot.exists() || snapshot.val().status === 'ended') && !hasHungUp.current) {
             toast({ title: 'Chamada Encerrada' });
             hangUp();
         }
@@ -197,9 +201,9 @@ export default function CallPage() {
       
       // Caller initiates the offer
       const initialCallData = (await get(callDbRef)).val();
-      if (initialCallData.callerId === currentUser.uid && !initialCallData.offer && pc.signalingState === 'stable') {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
+      if (initialCallData.callerId === currentUser.uid && !initialCallData.offer && pcRef.current.signalingState === 'stable') {
+        const offer = await pcRef.current.createOffer();
+        await pcRef.current.setLocalDescription(offer);
         await update(callDbRef, { offer });
       }
     };
@@ -318,6 +322,3 @@ export default function CallPage() {
     </div>
   );
 }
-    
-
-    

@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { cn } from '@/lib/utils';
 
 const iceServers = {
   iceServers: [
@@ -50,8 +51,12 @@ export default function VideoCallPage() {
   const localStreamRef = useRef<MediaStream | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const hasHungUp = useRef(false);
   
   const hangUp = useCallback(async () => {
+    if (hasHungUp.current) return;
+    hasHungUp.current = true;
+
     if (pcRef.current) {
       if (pcRef.current.signalingState !== 'closed') {
         pcRef.current.close();
@@ -83,7 +88,7 @@ export default function VideoCallPage() {
     const callDbRef = ref(db, `calls/${callId}`);
 
     const callStatusListener = onValue(callDbRef, (snapshot) => {
-        if (!snapshot.exists() || snapshot.val().status === 'ended') {
+        if ((!snapshot.exists() || snapshot.val().status === 'ended') && !hasHungUp.current) {
             toast({ title: 'Chamada Encerrada' });
             hangUp();
         }
@@ -197,9 +202,9 @@ export default function VideoCallPage() {
          
       // Caller initiates the offer
       const initialCallData = (await get(callDbRef)).val();
-      if (initialCallData.callerId === currentUser.uid && !initialCallData.offer && pc.signalingState === 'stable') {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
+      if (initialCallData.callerId === currentUser.uid && !initialCallData.offer && pcRef.current.signalingState === 'stable') {
+        const offer = await pcRef.current.createOffer();
+        await pcRef.current.setLocalDescription(offer);
         await update(callDbRef, { offer });
       }
     };
@@ -238,7 +243,7 @@ export default function VideoCallPage() {
   
   const isCallActive = callStatus === 'answered';
 
-  const VideoPlaceholder = ({user}: {user: OtherUser | null}) => (
+  const VideoPlaceholder = ({user, message = "Aguardando vídeo..."}: {user: OtherUser | null, message?: string}) => (
      <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-white bg-gray-900">
         {user ? (
             <>
@@ -246,7 +251,7 @@ export default function VideoCallPage() {
                     <AvatarImage src={user?.photoURL} />
                     <AvatarFallback className="text-4xl">{user?.displayName?.charAt(0)}</AvatarFallback>
                 </Avatar>
-                 <p className="text-lg">Aguardando vídeo...</p>
+                 <p className="text-lg">{message}</p>
             </>
         ) : (
             <div className="animate-pulse">
@@ -259,63 +264,36 @@ export default function VideoCallPage() {
 
   return (
     <div className="bg-black h-full flex flex-col text-white relative">
-      {!isCallActive ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center z-10 bg-black/50">
-          {otherUser ? (
-              <>
-                  <Avatar className="h-32 w-32 border-4 border-primary">
-                      <AvatarImage src={otherUser.photoURL} />
-                      <AvatarFallback className="text-4xl">{otherUser.displayName.charAt(0)}</AvatarFallback>
-                  </Avatar>
-                  <h1 className="text-3xl font-bold">{otherUser.displayName}</h1>
-              </>
-          ) : (
-              <div className="animate-pulse">
-                  <div className="h-32 w-32 rounded-full bg-gray-700 mx-auto mb-4"></div>
-                  <div className="h-8 w-48 bg-gray-700 rounded-md mx-auto"></div>
-              </div>
+      <video 
+          ref={remoteVideoRef} 
+          autoPlay 
+          playsInline 
+          className={cn(
+              "absolute top-0 left-0 w-full h-full object-cover z-0 transition-opacity",
+              isCallActive ? "opacity-100" : "opacity-0"
           )}
-            <p className="text-lg text-gray-300 capitalize">{callStatus === 'ringing' ? 'Chamando...' : 'Conectando...'}</p>
-        </div>
-      ) : (
-        <>
-            {/* Remote Video - Top Half */}
-            <div className="w-full h-1/2 bg-black relative">
-                <video 
-                    ref={remoteVideoRef} 
-                    autoPlay 
-                    playsInline 
-                    className="w-full h-full object-cover" 
-                />
-                 {(!remoteVideoRef.current?.srcObject || !remoteVideoRef.current.videoWidth) && <VideoPlaceholder user={otherUser} />}
-            </div>
+      />
 
-            {/* Local Video - Bottom Half */}
-            <div className="w-full h-1/2 bg-black relative">
-                 {isVideoOff ? (
-                    <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-white bg-gray-900">
-                       <Avatar className="h-32 w-32 border-4 border-gray-600">
-                           <AvatarImage src={currentUser?.photoURL || undefined} />
-                           <AvatarFallback className="text-4xl">{currentUser?.displayName?.charAt(0)}</AvatarFallback>
-                       </Avatar>
-                       <p className="text-lg">Câmera desligada</p>
-                   </div>
-                ) : (
-                    <video 
-                        ref={localVideoRef} 
-                        autoPlay 
-                        playsInline 
-                        muted 
-                        className="w-full h-full object-cover"
-                    />
-                )}
-            </div>
-        </>
+      {isCallActive ? (
+        <video 
+            ref={localVideoRef} 
+            autoPlay 
+            playsInline 
+            muted 
+            className={cn(
+                "absolute bottom-4 right-4 w-1/4 max-w-[120px] aspect-[9/16] rounded-lg object-cover z-20 border-2 border-white shadow-lg transition-opacity",
+                isVideoOff ? "opacity-0" : "opacity-100"
+            )}
+        />
+      ) : (
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center z-10 bg-black/50">
+          <VideoPlaceholder user={otherUser} message={callStatus === 'ringing' ? 'Chamando...' : 'Conectando...'} />
+        </div>
       )}
 
 
        {!hasPermissions && (
-          <div className="absolute inset-0 flex items-center justify-center p-4 bg-black/70 z-20">
+          <div className="absolute inset-0 flex items-center justify-center p-4 bg-black/70 z-30">
             <Alert variant="destructive" className="w-full max-w-sm">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle>Câmera e Microfone Necessários</AlertTitle>
@@ -327,7 +305,7 @@ export default function VideoCallPage() {
        )}
 
       {/* Controls */}
-      <div className="absolute bottom-8 left-0 right-0 flex items-center justify-center gap-4 z-10">
+      <div className="absolute bottom-8 left-0 right-0 flex items-center justify-center gap-4 z-20">
         <Button variant="secondary" size="lg" className="rounded-full h-16 w-16 bg-white/20 hover:bg-white/30 backdrop-blur-sm" onClick={toggleMute} disabled={!hasPermissions}>
           {isMuted ? <MicOff /> : <Mic />}
         </Button>
@@ -341,5 +319,3 @@ export default function VideoCallPage() {
     </div>
   );
 }
-
-    

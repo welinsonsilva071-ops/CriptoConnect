@@ -9,7 +9,7 @@ import { ref, onValue, off, get } from 'firebase/database';
 import Link from 'next/link';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { UserPlus, Plus, MoreHorizontal } from 'lucide-react';
+import { UserPlus, MoreHorizontal } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -150,36 +150,37 @@ export default function HomePage() {
   return (
     <div className="relative min-h-full flex flex-col">
       <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm p-4 border-b border-border flex justify-between items-center">
-        <div className="flex items-center gap-2">
-            <Avatar className="h-8 w-8">
+        <div className="flex items-center gap-4">
+            <Avatar className="h-10 w-10">
               <AvatarImage src={dbUser?.photoURL || undefined} />
               <AvatarFallback>{(dbUser?.displayName || 'U').charAt(0)}</AvatarFallback>
             </Avatar>
             <h2 className="text-xl font-bold">Conversas</h2>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon">
-              <MoreHorizontal className="h-5 w-5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-56" align="end">
-            <DropdownMenuLabel>Minha Conta</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-             <DropdownMenuItem asChild>
-               <Link href="/search-users" className="cursor-pointer">
-                <UserPlus className="mr-2 h-4 w-4" />
-                <span>Adicionar Contato</span>
-               </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleLogout}>
-              Sair
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleDeleteAccount} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
-              Excluir Conta
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" asChild>
+            <Link href="/search-users">
+              <UserPlus className="h-5 w-5" />
+            </Link>
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon">
+                <MoreHorizontal className="h-5 w-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56" align="end">
+              <DropdownMenuLabel>Minha Conta</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout}>
+                Sair
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleDeleteAccount} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
+                Excluir Conta
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </header>
 
       <section className="flex-grow">
@@ -187,6 +188,12 @@ export default function HomePage() {
         {!isLoadingChats && chats.length === 0 && (
           <div className="p-8 text-center">
             <p className="text-muted-foreground mb-4">Nenhuma conversa encontrada.</p>
+             <Button asChild>
+                <Link href="/search-users">
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Adicionar Contato
+                </Link>
+              </Button>
           </div>
         )}
         {!isLoadingChats && chats.map(chat => (
@@ -207,15 +214,6 @@ export default function HomePage() {
           </Link>
         ))}
       </section>
-
-      <div className="absolute bottom-20 right-6">
-          <Button className="rounded-full h-14 w-14 shadow-lg" asChild>
-            <Link href="/search-users">
-              <Plus className="h-6 w-6" />
-              <span className="sr-only">Adicionar Contato</span>
-            </Link>
-          </Button>
-      </div>
     </div>
   );
 }

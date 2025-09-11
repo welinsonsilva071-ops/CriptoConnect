@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
+import { MessageCircle } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -50,9 +51,12 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-background">
-      <Card className="w-full max-w-md">
-        <CardHeader>
+    <div className="flex items-center justify-center min-h-screen bg-secondary">
+      <Card className="w-full max-w-md shadow-lg">
+        <CardHeader className="text-center">
+            <div className="mx-auto bg-primary text-primary-foreground rounded-full h-16 w-16 flex items-center justify-center mb-4">
+              <MessageCircle className="h-8 w-8" />
+            </div>
           <CardTitle>Acessar</CardTitle>
           <CardDescription>Bem-vindo de volta! Faça login na sua conta.</CardDescription>
         </CardHeader>
@@ -85,7 +89,7 @@ export default function LoginPage() {
           </form>
            <div className="mt-4 text-center text-sm">
             Não tem uma conta?{' '}
-            <Link href="/signup" className="underline">
+            <Link href="/signup" className="underline font-semibold text-primary">
               Cadastre-se
             </Link>
           </div>
