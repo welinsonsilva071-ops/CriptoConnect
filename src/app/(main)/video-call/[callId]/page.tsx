@@ -215,7 +215,7 @@ export default function VideoCallPage() {
         if (callListener && callDbRef) off(callDbRef, 'value', callListener);
         iceListeners.forEach(({ ref, listener }) => off(ref, 'value', listener));
     }
-  }, [currentUser, callId, otherUser]);
+  }, [currentUser, callId, otherUser, hangUp, toast]);
 
   const toggleMute = () => {
     setIsMuted(current => {
@@ -243,50 +243,28 @@ export default function VideoCallPage() {
   
   const isCallActive = callStatus === 'answered';
 
-  return (
-    <div className="bg-black h-full flex flex-col text-white relative">
-      
-      {/* Remote Video - Full screen background */}
-      <video 
-        ref={remoteVideoRef} 
-        autoPlay 
-        playsInline 
-        className="w-full h-full object-cover absolute top-0 left-0 z-0" 
-      />
-      {isCallActive && !remoteVideoRef.current?.srcObject && otherUser && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-white bg-black z-0">
-          <Avatar className="h-32 w-32 border-4 border-primary">
-            <AvatarImage src={otherUser?.photoURL} />
-            <AvatarFallback className="text-4xl">{otherUser?.displayName?.charAt(0)}</AvatarFallback>
-          </Avatar>
-          <p className="text-lg">Aguardando vídeo...</p>
-        </div>
-      )}
-
-
-      {/* Local Video - Small, on top */}
-      <video 
-        ref={localVideoRef} 
-        autoPlay 
-        playsInline 
-        muted 
-        className={cn(
-            "w-1/3 max-w-48 aspect-[3/4] object-cover rounded-md absolute top-4 right-4 z-10 border-2 border-white",
-            (isVideoOff || !isCallActive) && "hidden"
-        )}
-      />
-       {isCallActive && isVideoOff && (
-            <div className="w-1/3 max-w-48 aspect-[3/4] bg-gray-900/80 rounded-md absolute top-4 right-4 z-10 flex flex-col items-center justify-center text-center p-2">
-                <Avatar className="h-16 w-16 mb-2">
-                    <AvatarImage src={currentUser?.photoURL || undefined} />
-                    <AvatarFallback>{currentUser?.displayName?.charAt(0)}</AvatarFallback>
+  const VideoPlaceholder = ({user}: {user: OtherUser | null}) => (
+     <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-white bg-gray-900">
+        {user ? (
+            <>
+                <Avatar className="h-32 w-32 border-4 border-primary">
+                    <AvatarImage src={user?.photoURL} />
+                    <AvatarFallback className="text-4xl">{user?.displayName?.charAt(0)}</AvatarFallback>
                 </Avatar>
-                <p className="text-xs">Câmera desligada</p>
+                 <p className="text-lg">Aguardando vídeo...</p>
+            </>
+        ) : (
+            <div className="animate-pulse">
+                <div className="h-32 w-32 rounded-full bg-gray-700 mx-auto mb-4"></div>
+                <div className="h-8 w-48 bg-gray-700 rounded-md mx-auto"></div>
             </div>
         )}
+    </div>
+  )
 
-      {/* Placeholder for ringing/connecting state */}
-      {!isCallActive && (
+  return (
+    <div className="bg-black h-full flex flex-col text-white relative">
+      {!isCallActive ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center z-10 bg-black/50">
           {otherUser ? (
               <>
@@ -304,6 +282,40 @@ export default function VideoCallPage() {
           )}
             <p className="text-lg text-gray-300 capitalize">{callStatus === 'ringing' ? 'Chamando...' : 'Conectando...'}</p>
         </div>
+      ) : (
+        <>
+            {/* Remote Video - Top Half */}
+            <div className="w-full h-1/2 bg-black relative">
+                <video 
+                    ref={remoteVideoRef} 
+                    autoPlay 
+                    playsInline 
+                    className="w-full h-full object-cover" 
+                />
+                 {!remoteVideoRef.current?.srcObject && <VideoPlaceholder user={otherUser} />}
+            </div>
+
+            {/* Local Video - Bottom Half */}
+            <div className="w-full h-1/2 bg-black relative">
+                 {isVideoOff ? (
+                    <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-white bg-gray-900">
+                       <Avatar className="h-32 w-32 border-4 border-gray-600">
+                           <AvatarImage src={currentUser?.photoURL || undefined} />
+                           <AvatarFallback className="text-4xl">{currentUser?.displayName?.charAt(0)}</AvatarFallback>
+                       </Avatar>
+                       <p className="text-lg">Câmera desligada</p>
+                   </div>
+                ) : (
+                    <video 
+                        ref={localVideoRef} 
+                        autoPlay 
+                        playsInline 
+                        muted 
+                        className="w-full h-full object-cover"
+                    />
+                )}
+            </div>
+        </>
       )}
 
 
@@ -334,4 +346,3 @@ export default function VideoCallPage() {
     </div>
   );
 }
- 
