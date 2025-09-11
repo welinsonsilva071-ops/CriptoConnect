@@ -12,6 +12,7 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import IncomingCallNotification from '@/components/calls/incoming-call-notification';
+import PermissionGate from '@/components/layout/permission-gate';
 
 type DbUser = {
   uid: string;
@@ -126,28 +127,30 @@ export default function MainLayout({
   return (
     <div className="min-h-screen bg-background flex justify-center">
       <div className="w-full max-w-sm flex flex-col relative">
-        {user && <IncomingCallNotification userId={user.uid} />}
-        <main className={`flex-1 border-x border-border min-h-0 overflow-y-auto ${isMessagesPage ? 'grid grid-rows-[auto,1fr,auto]' : ''}`}>
-          {children}
-        </main>
-        {!isMessagesPage && (
-           <footer className="sticky bottom-0 bg-background border-t border-border">
-            <nav className="flex justify-around items-center h-16">
-              {navItems.map((item) => {
-                const isActive = pathname === item.href;
-                return (
-                  <Link href={item.href} key={item.label} className={cn(
-                    "flex flex-col items-center justify-center gap-1 text-xs w-full h-full",
-                    isActive ? "text-primary" : "text-muted-foreground"
-                  )}>
-                      <item.icon className="h-6 w-6" />
-                      <span>{item.label}</span>
-                  </Link>
-                )
-              })}
-            </nav>
-          </footer>
-        )}
+        <PermissionGate>
+          {user && <IncomingCallNotification userId={user.uid} />}
+          <main className={`flex-1 border-x border-border min-h-0 overflow-y-auto ${isMessagesPage ? 'grid grid-rows-[auto,1fr,auto]' : ''}`}>
+            {children}
+          </main>
+          {!isMessagesPage && (
+             <footer className="sticky bottom-0 bg-background border-t border-border">
+              <nav className="flex justify-around items-center h-16">
+                {navItems.map((item) => {
+                  const isActive = pathname === item.href;
+                  return (
+                    <Link href={item.href} key={item.label} className={cn(
+                      "flex flex-col items-center justify-center gap-1 text-xs w-full h-full",
+                      isActive ? "text-primary" : "text-muted-foreground"
+                    )}>
+                        <item.icon className="h-6 w-6" />
+                        <span>{item.label}</span>
+                    </Link>
+                  )
+                })}
+              </nav>
+            </footer>
+          )}
+        </PermissionGate>
       </div>
     </div>
   );
