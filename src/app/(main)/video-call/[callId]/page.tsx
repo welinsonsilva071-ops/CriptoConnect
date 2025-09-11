@@ -5,13 +5,14 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from '@/lib/firebase';
-import { ref, onValue, off, update, push, get, remove, serverTimestamp } from 'firebase/database';
+import { ref, onValue, off, update, push, get, remove } from 'firebase/database';
 import { Button } from '@/components/ui/button';
 import { Mic, MicOff, PhoneOff, Video, VideoOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 const iceServers = {
   iceServers: [
@@ -93,7 +94,6 @@ export default function VideoCallPage() {
     return () => {
         off(callDbRef, 'value', callListener);
         window.removeEventListener('beforeunload', hangUp);
-        // hangUp() foi movido para o listener 'beforeunload' para evitar encerramentos prematuros
     }
   }, [callId, hangUp, toast]);
 
@@ -131,7 +131,7 @@ export default function VideoCallPage() {
         });
 
         pc.ontrack = (event) => {
-            if (remoteVideoRef.current) {
+            if (remoteVideoRef.current && event.streams[0]) {
                 remoteVideoRef.current.srcObject = event.streams[0];
             }
         };
@@ -144,8 +144,9 @@ export default function VideoCallPage() {
         };
 
         callListener = onValue(callDbRef, async (snapshot) => {
-            if (!snapshot.exists()) return;
-
+            if (!snapshot.exists() || !pcRef.current) return;
+            
+            const pc = pcRef.current;
             const data = snapshot.val() as CallData;
             setCallStatus(data.status);
             const isCaller = data.callerId === currentUser.uid;
@@ -160,25 +161,30 @@ export default function VideoCallPage() {
             // --- Signaling Logic ---
             if (pc.signalingState === 'closed') return;
             
-            if (data.offer && pc.signalingState === 'stable') { // Receiver logic
+            // Receiver: Set remote offer, create answer
+            if (data.offer && pc.signalingState === 'stable') {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
-                await update(snapshot.ref, { answer, status: 'answered' }); // Status é 'answered' aqui
+                await update(snapshot.ref, { answer, status: 'answered' });
                 iceCandidateQueue.current.forEach(candidate => pc.addIceCandidate(candidate).catch(e => console.error("Error adding queued ICE candidate", e)));
                 iceCandidateQueue.current = [];
-            } else if (data.answer && pc.signalingState === 'have-local-offer') { // Caller logic
+            } 
+            // Caller: Set remote answer
+            else if (data.answer && pc.signalingState === 'have-local-offer') {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
                 iceCandidateQueue.current.forEach(candidate => pc.addIceCandidate(candidate).catch(e => console.error("Error adding queued ICE candidate", e)));
                 iceCandidateQueue.current = [];
             }
             
-            if (isCaller && !data.offer && pc.signalingState === 'stable') { // Caller creates offer
+            // Caller: Create offer
+            if (isCaller && !data.offer && pc.signalingState === 'stable') {
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
                 await update(callDbRef, { offer });
             }
             
+            // Setup ICE listeners for the other user
             if (otherUserId && !iceListeners.find(l => l.id === otherUserId)) {
                 const iceRef = ref(db, `calls/${callId}/iceCandidates/${otherUserId}`);
                 const iceListener = onValue(iceRef, (iceSnapshot) => {
@@ -200,10 +206,10 @@ export default function VideoCallPage() {
     setupCall();
     
     return () => {
-        if (callListener) off(callDbRef, 'value', callListener);
+        if (callListener && callDbRef.current) off(callDbRef.current, 'value', callListener);
         iceListeners.forEach(({ ref, listener }) => off(ref, 'value', listener));
     }
-  }, [currentUser, callId, otherUser, toast]);
+  }, [currentUser, callId, hangUp, toast]);
 
   const toggleMute = () => {
     setIsMuted(current => {
@@ -229,32 +235,63 @@ export default function VideoCallPage() {
     });
   };
   
+  const isCallActive = callStatus === 'answered';
+
   return (
     <div className="bg-black h-full flex flex-col text-white relative">
-      <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
       
-      <video 
-        ref={localVideoRef} 
-        autoPlay 
-        playsInline 
-        muted 
-        className={cn(
-          "absolute top-4 right-4 w-1/4 max-w-[120px] rounded-lg border-2 border-white shadow-md transition-opacity",
-          isVideoOff && "opacity-0"
-        )} 
-      />
-
-      <div className="absolute top-4 left-4">
-        {otherUser && (
-            <div className="p-2 bg-black/50 rounded-lg">
-                <h1 className="text-xl font-bold">{otherUser.displayName}</h1>
-                <p className="text-sm text-gray-300 capitalize">{callStatus}...</p>
+      {/* Videos container */}
+      <div className="flex-1 flex flex-col">
+        {isCallActive ? (
+          <>
+            {/* Remote Video (Top 50%) */}
+            <div className="w-full h-1/2 bg-black flex items-center justify-center">
+              <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
             </div>
+            {/* Local Video (Bottom 50%) */}
+            <div className="w-full h-1/2 bg-gray-900 flex items-center justify-center">
+              <video 
+                ref={localVideoRef} 
+                autoPlay 
+                playsInline 
+                muted 
+                className={cn("w-full h-full object-cover", isVideoOff && "hidden")}
+              />
+               {isVideoOff && (
+                  <div className="flex flex-col items-center gap-2">
+                    <Avatar className="h-24 w-24">
+                        <AvatarImage src={currentUser?.photoURL || undefined} />
+                        <AvatarFallback>{currentUser?.displayName?.charAt(0)}</AvatarFallback>
+                    </Avatar>
+                    <p>Câmera desligada</p>
+                  </div>
+                )}
+            </div>
+          </>
+        ) : (
+          /* Placeholder for ringing/connecting state */
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center">
+            {otherUser ? (
+                <>
+                    <Avatar className="h-32 w-32 border-4 border-primary">
+                        <AvatarImage src={otherUser.photoURL} />
+                        <AvatarFallback className="text-4xl">{otherUser.displayName.charAt(0)}</AvatarFallback>
+                    </Avatar>
+                    <h1 className="text-3xl font-bold">{otherUser.displayName}</h1>
+                </>
+            ) : (
+                <div className="animate-pulse">
+                    <div className="h-32 w-32 rounded-full bg-gray-700 mx-auto mb-4"></div>
+                    <div className="h-8 w-48 bg-gray-700 rounded-md mx-auto"></div>
+                </div>
+            )}
+             <p className="text-lg text-gray-300 capitalize">{callStatus === 'ringing' ? 'Chamando...' : 'Conectando...'}</p>
+          </div>
         )}
       </div>
 
        {!hasPermissions && (
-          <div className="absolute inset-0 flex items-center justify-center p-4 bg-black/70">
+          <div className="absolute inset-0 flex items-center justify-center p-4 bg-black/70 z-20">
             <Alert variant="destructive" className="w-full max-w-sm">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle>Câmera e Microfone Necessários</AlertTitle>
@@ -265,7 +302,8 @@ export default function VideoCallPage() {
           </div>
        )}
 
-      <div className="absolute bottom-8 left-0 right-0 flex items-center justify-center gap-4">
+      {/* Controls */}
+      <div className="absolute bottom-8 left-0 right-0 flex items-center justify-center gap-4 z-10">
         <Button variant="secondary" size="lg" className="rounded-full h-16 w-16 bg-white/20 hover:bg-white/30 backdrop-blur-sm" onClick={toggleMute} disabled={!hasPermissions}>
           {isMuted ? <MicOff /> : <Mic />}
         </Button>
@@ -279,5 +317,4 @@ export default function VideoCallPage() {
     </div>
   );
 }
-
-    
+ 
