@@ -11,6 +11,7 @@ import { Mic, MicOff, PhoneOff, Video, VideoOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 type CallData = {
   callerId: string;
@@ -50,10 +51,11 @@ export default function VideoCallPage() {
     hasHungUp.current = true;
 
     if (pcRef.current) {
-      if (pcRef.current.signalingState !== 'closed') {
+        pcRef.current.getTransceivers().forEach(transceiver => {
+            transceiver.stop();
+        });
         pcRef.current.close();
-      }
-      pcRef.current = null;
+        pcRef.current = null;
     }
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => track.stop());
@@ -104,8 +106,7 @@ export default function VideoCallPage() {
   useEffect(() => {
     if (!currentUser || !callId || pcRef.current) return;
 
-    let callListener: any;
-    let iceListeners: any[] = [];
+    let allListeners: { ref: any; listener: any }[] = [];
     const callDbRef = ref(db, `calls/${callId}`);
 
     const setupCall = async () => {
@@ -123,6 +124,7 @@ export default function VideoCallPage() {
           title: 'Permissões Necessárias',
           description: 'Você precisa permitir o acesso à câmera e ao microfone.'
         });
+        hangUp();
         return;
       }
 
@@ -147,12 +149,12 @@ export default function VideoCallPage() {
       };
 
       // Main signaling logic
-      callListener = onValue(callDbRef, async (snapshot) => {
+      const callListener = onValue(callDbRef, async (snapshot) => {
         if (!snapshot.exists()) return;
 
         const data = snapshot.val() as CallData;
         const pc = pcRef.current;
-        if (!pc || pc.signalingState === 'closed') return;
+        if (!pc || pc.signalingState === 'closed' || hasHungUp.current) return;
 
         setCallStatus(data.status);
         const isCaller = data.callerId === currentUser.uid;
@@ -160,33 +162,38 @@ export default function VideoCallPage() {
         
         // Receiver Logic
         if (data.offer && !isCaller && pc.signalingState === 'stable') {
-          await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-          if(pc.signalingState === 'have-remote-offer') {
+          try {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
             await update(snapshot.ref, { answer, status: 'answered' });
+          } catch(e) {
+             console.error("Error setting up receiver call flow", e);
           }
         } 
         // Caller Logic
         else if (data.answer && isCaller && pc.signalingState === 'have-local-offer') {
-          await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+           try {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+           } catch(e) {
+             console.error("Error setting remote description for answer", e);
+           }
         }
         
         // ICE Candidate listener
-        if (otherUserId && !iceListeners.find(l => l.id === otherUserId)) {
-          const iceRef = ref(db, `calls/${callId}/iceCandidates/${otherUserId}`);
-          const iceListener = onValue(iceRef, (iceSnapshot) => {
+        const iceCandidateRef = ref(db, `calls/${callId}/iceCandidates/${otherUserId}`);
+        const iceListener = onValue(iceCandidateRef, (iceSnapshot) => {
             iceSnapshot.forEach((childSnapshot) => {
               const candidate = new RTCIceCandidate(childSnapshot.val());
               if (pc.remoteDescription) {
-                pc.addIceCandidate(candidate).catch(e => console.error("Error adding received ICE candidate", e));
+                  pc.addIceCandidate(candidate).catch(e => console.error("Error adding received ICE candidate", e));
               }
               remove(childSnapshot.ref);
             });
-          });
-          iceListeners.push({ id: otherUserId, ref: iceRef, listener: iceListener });
-        }
+        });
+        allListeners.push({ ref: iceCandidateRef, listener: iceListener });
       });
+      allListeners.push({ ref: callDbRef, listener: callListener });
          
       // Caller initiates the offer
       const initialCallData = (await get(callDbRef)).val();
@@ -200,10 +207,9 @@ export default function VideoCallPage() {
     setupCall();
     
     return () => {
-        if (callListener && callDbRef) off(callDbRef, 'value', callListener);
-        iceListeners.forEach(({ ref, listener }) => off(ref, 'value', listener));
+        allListeners.forEach(({ ref, listener }) => off(ref, 'value', listener));
     }
-  }, [currentUser, callId, toast]);
+  }, [currentUser, callId, toast, hangUp]);
 
   const toggleMute = () => {
     setIsMuted(current => {
@@ -230,23 +236,30 @@ export default function VideoCallPage() {
   };
 
   return (
-    <div className="bg-black h-full flex flex-col text-white relative">
-      {/* Remote Video - Full screen background */}
-      <video 
-          ref={remoteVideoRef} 
-          autoPlay 
-          playsInline 
-          className="w-full h-full object-cover absolute top-0 left-0"
-      />
-      
-      {/* Local Video - Picture-in-picture style */}
-      <video 
-          ref={localVideoRef} 
-          autoPlay 
-          playsInline 
-          muted 
-          className="w-1/4 max-w-[150px] aspect-[9/16] object-cover rounded-lg absolute top-4 right-4 border-2 border-white/50"
-      />
+    <div className="bg-black h-full flex flex-col text-white relative overflow-hidden">
+      <div className="flex-1 grid grid-cols-1 md:grid-cols-2">
+         {/* Remote Video */}
+        <div className="relative w-full h-full bg-black flex items-center justify-center">
+             <video 
+              ref={remoteVideoRef} 
+              autoPlay 
+              playsInline 
+              className="w-full h-full object-cover"
+            />
+             {callStatus !== 'answered' && <p className="absolute text-lg font-semibold">Aguardando conexão...</p>}
+        </div>
+        {/* Local Video */}
+        <div className={cn("relative w-full h-full bg-neutral-900 flex items-center justify-center", isVideoOff && "bg-black")}>
+          <video 
+              ref={localVideoRef} 
+              autoPlay 
+              playsInline 
+              muted 
+              className={cn("w-full h-full object-cover", isVideoOff && "hidden")}
+          />
+           {isVideoOff && <p className="text-lg font-semibold">Câmera desligada</p>}
+        </div>
+      </div>
 
 
        {!hasPermissions && (
@@ -262,11 +275,11 @@ export default function VideoCallPage() {
        )}
 
       {/* Controls */}
-      <div className="absolute bottom-8 left-0 right-0 flex items-center justify-center gap-4 z-20">
-        <Button variant="secondary" size="lg" className="rounded-full h-16 w-16 bg-white/20 hover:bg-white/30 backdrop-blur-sm" onClick={toggleMute} disabled={!hasPermissions}>
+      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center justify-center gap-4 z-20 p-4 bg-black/30 backdrop-blur-sm rounded-full">
+        <Button variant="secondary" size="lg" className="rounded-full h-16 w-16 bg-white/20 hover:bg-white/30 text-white" onClick={toggleMute} disabled={!hasPermissions}>
           {isMuted ? <MicOff /> : <Mic />}
         </Button>
-         <Button variant="secondary" size="lg" className="rounded-full h-16 w-16 bg-white/20 hover:bg-white/30 backdrop-blur-sm" onClick={toggleVideo} disabled={!hasPermissions}>
+         <Button variant="secondary" size="lg" className="rounded-full h-16 w-16 bg-white/20 hover:bg-white/30 text-white" onClick={toggleVideo} disabled={!hasPermissions}>
           {isVideoOff ? <VideoOff /> : <Video />}
         </Button>
         <Button variant="destructive" size="lg" className="rounded-full h-16 w-16" onClick={hangUp}>

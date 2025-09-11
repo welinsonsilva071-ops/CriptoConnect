@@ -57,9 +57,10 @@ export default function CallPage() {
      hasHungUp.current = true;
 
     if (pcRef.current) {
-        if (pcRef.current.signalingState !== 'closed') {
-            pcRef.current.close();
-        }
+        pcRef.current.getTransceivers().forEach(transceiver => {
+            transceiver.stop();
+        });
+        pcRef.current.close();
         pcRef.current = null;
     }
     if (localStreamRef.current) {
@@ -78,6 +79,7 @@ export default function CallPage() {
             console.error("Error during hangup update:", e);
         }
     }
+    
     router.push('/');
   }, [callId, currentUser, router]);
 
@@ -114,7 +116,7 @@ export default function CallPage() {
     if (!currentUser || !callId || pcRef.current) return;
 
     const callDbRef = ref(db, `calls/${callId}`);
-    let iceListeners: any[] = [];
+    let allListeners: { ref: any; listener: any }[] = [];
 
     const setupCall = async () => {
       try {
@@ -129,6 +131,7 @@ export default function CallPage() {
           title: 'Permissão de Microfone Negada',
           description: 'Você precisa permitir o acesso ao microfone para fazer chamadas.'
         });
+        hangUp();
         return;
       }
 
@@ -152,11 +155,10 @@ export default function CallPage() {
         }
       };
       
-      // Main signaling logic
       const callListener = onValue(callDbRef, async (snapshot) => {
-        if (!snapshot.exists()) return;
-        
         const data = snapshot.val() as CallData;
+        if (!snapshot.exists() || !data) return;
+
         setCallData(data);
         const pc = pcRef.current;
         if (!pc || pc.signalingState === 'closed' || hasHungUp.current) return;
@@ -183,8 +185,9 @@ export default function CallPage() {
             console.error("Error creating answer: ", e);
           }
         } 
+        
         // Caller Logic
-        else if (data.answer && isCaller && pc.signalingState === 'have-local-offer') {
+        if (data.answer && isCaller && pc.signalingState === 'have-local-offer') {
           try {
               await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
           } catch (e) {
@@ -192,43 +195,37 @@ export default function CallPage() {
           }
         }
         
-        // ICE Candidate listener
-        if (otherUserId && !iceListeners.find(l => l.id === otherUserId)) {
-          const iceRef = ref(db, `calls/${callId}/iceCandidates/${otherUserId}`);
-          const iceListener = onValue(iceRef, (iceSnapshot) => {
+        // Listen for ICE candidates from the other user
+        const iceCandidateRef = ref(db, `calls/${callId}/iceCandidates/${otherUserId}`);
+        const iceListener = onValue(iceCandidateRef, (iceSnapshot) => {
             iceSnapshot.forEach((childSnapshot) => {
-              const candidate = new RTCIceCandidate(childSnapshot.val());
-              if (pc.remoteDescription) {
-                pc.addIceCandidate(candidate).catch(e => console.error("Error adding received ICE candidate", e));
-              }
-              remove(childSnapshot.ref);
+                const candidate = new RTCIceCandidate(childSnapshot.val());
+                if(pc.remoteDescription) {
+                    pc.addIceCandidate(candidate).catch(e => console.error("Error adding received ICE candidate", e));
+                }
+                remove(childSnapshot.ref);
             });
-          });
-          iceListeners.push({ id: otherUserId, ref: iceRef, listener: iceListener });
-        }
+        });
+        allListeners.push({ ref: iceCandidateRef, listener: iceListener });
       });
-      
-      // Caller initiates the offer
+
+      allListeners.push({ ref: callDbRef, listener: callListener });
+
       const initialCallData = (await get(callDbRef)).val();
       if (initialCallData.callerId === currentUser.uid && !initialCallData.offer && pcRef.current.signalingState === 'stable') {
         const offer = await pcRef.current.createOffer();
         await pcRef.current.setLocalDescription(offer);
         await update(callDbRef, { offer });
       }
-
-      return () => {
-        off(callDbRef, 'value', callListener);
-        iceListeners.forEach(({ ref: iceRef, listener }) => off(iceRef, 'value', listener));
-      }
     };
     
-    const unsubscribePromise = setupCall();
+    setupCall();
 
     return () => {
-        unsubscribePromise.then(cleanup => cleanup && cleanup());
+        allListeners.forEach(({ ref, listener }) => off(ref, 'value', listener));
     }
 
-  }, [currentUser, callId, isMuted, toast, otherUser]);
+  }, [currentUser, callId, isMuted, toast, otherUser, hangUp]);
 
 
   useEffect(() => {
@@ -290,7 +287,7 @@ export default function CallPage() {
 
   return (
     <div className="bg-background h-full flex flex-col justify-between items-center text-center p-8">
-      <div>
+      <div className="flex-grow flex flex-col items-center justify-center">
         {otherUser ? (
             <>
                 <Avatar className="h-32 w-32 mx-auto mb-4 border-4 border-primary">
@@ -311,7 +308,7 @@ export default function CallPage() {
       </div>
 
        {!hasMicPermission && (
-          <Alert variant="destructive" className="w-full max-w-sm">
+          <Alert variant="destructive" className="w-full max-w-sm mb-8">
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Microfone Necessário</AlertTitle>
             <AlertDescription>
@@ -320,7 +317,7 @@ export default function CallPage() {
           </Alert>
        )}
 
-      <div className="flex items-center justify-center gap-4">
+      <div className="flex items-center justify-center gap-4 mb-4">
         <Button variant="secondary" size="lg" className="rounded-full h-16 w-16" onClick={toggleMute} disabled={!hasMicPermission}>
           {isMuted ? <MicOff /> : <Mic />}
         </Button>
