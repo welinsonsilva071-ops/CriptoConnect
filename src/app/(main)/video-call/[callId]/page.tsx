@@ -88,9 +88,12 @@ export default function VideoCallPage() {
             hangUp();
         }
     });
+    
+    window.addEventListener('beforeunload', hangUp);
 
     return () => {
         off(callDbRef, 'value', callListener);
+        window.removeEventListener('beforeunload', hangUp);
         hangUp();
     }
   }, [callId, hangUp, toast]);
