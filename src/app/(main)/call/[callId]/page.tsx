@@ -77,9 +77,7 @@ export default function CallPage() {
             console.error("Error during hangup update:", e);
         }
     }
-    if (!router.asPath.startsWith('/messages')) {
-       router.push('/');
-    }
+    router.push('/');
   }, [callId, currentUser, router]);
 
   useEffect(() => {
@@ -107,7 +105,6 @@ export default function CallPage() {
         }
     };
   
-    // Add this to handle user leaving the page
     window.addEventListener('beforeunload', hangUp);
 
     return () => {
@@ -188,41 +185,38 @@ export default function CallPage() {
             }
 
             // --- Signaling Logic ---
-            if (data.offer && pc.signalingState === 'stable') { // Receiver side
+            if (isCaller) {
+              if (data.answer && pc.signalingState === 'have-local-offer') {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+                iceCandidateQueue.current.forEach(candidate => pc.addIceCandidate(candidate).catch(e => console.error("Error adding queued ICE candidate", e)));
+                iceCandidateQueue.current = [];
+              }
+            } else { // Receiver
+              if (data.offer && pc.signalingState === 'stable') {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
                 await update(snapshot.ref, { answer, status: 'answered' });
-                
-                // Process any queued candidates now that remote description is set
                 iceCandidateQueue.current.forEach(candidate => pc.addIceCandidate(candidate).catch(e => console.error("Error adding queued ICE candidate", e)));
                 iceCandidateQueue.current = [];
-
-            } else if (data.answer && pc.signalingState === 'have-local-offer') { // Caller side
-                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-
-                 // Process any queued candidates now that remote description is set
-                 iceCandidateQueue.current.forEach(candidate => pc.addIceCandidate(candidate).catch(e => console.error("Error adding queued ICE candidate", e)));
-                 iceCandidateQueue.current = [];
+              }
             }
             
-            // If I am the caller and there's no offer, create one.
-            if (isCaller && !data.offer) {
+            if (isCaller && !data.offer && pc.signalingState === 'stable') {
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
                 await update(callDbRef.current, { offer });
             }
-
+            
              // Setup ICE listeners for the other user if not already done
             if (otherUserId && !iceValueListeners.find(l => l.ref.toString().includes(otherUserId))) {
                 const otherIceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${otherUserId}`);
                 const iceListener = onValue(otherIceCandidatesRef, (iceSnapshot) => {
                     iceSnapshot.forEach((childSnapshot) => {
                         const candidate = new RTCIceCandidate(childSnapshot.val());
-                        if (pc.remoteDescription) {
+                        if (pc.remoteDescription && pc.signalingState !== 'closed') {
                             pc.addIceCandidate(candidate).catch(e => console.error("Error adding received ICE candidate", e));
                         } else {
-                            // Queue candidate if remote description is not set yet
                             iceCandidateQueue.current.push(candidate);
                         }
                         remove(childSnapshot.ref);
