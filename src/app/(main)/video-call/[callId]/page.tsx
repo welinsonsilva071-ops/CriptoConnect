@@ -11,29 +11,6 @@ import { Mic, MicOff, PhoneOff, Video, VideoOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { cn } from '@/lib/utils';
-
-const iceServers = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-  ],
-};
-
-type CallData = {
-  callerId: string;
-  receiverId: string;
-  status: 'ringing' | 'answered' | 'ended';
-  offer?: RTCSessionDescriptionInit;
-  answer?: RTCSessionDescriptionInit;
-};
-
-type OtherUser = {
-    uid: string;
-    displayName: string;
-    photoURL?: string;
-}
 
 export default function VideoCallPage() {
   const [currentUser] = useAuthState(auth);
@@ -42,7 +19,6 @@ export default function VideoCallPage() {
   const { toast } = useToast();
 
   const [callStatus, setCallStatus] = useState<'connecting' | 'ringing' | 'answered' | 'ended'>('connecting');
-  const [otherUser, setOtherUser] = useState<OtherUser | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [hasPermissions, setHasPermissions] = useState(true);
@@ -110,7 +86,7 @@ export default function VideoCallPage() {
 
   // Effect for WebRTC Connection Setup
   useEffect(() => {
-    if (!currentUser || !callId) return;
+    if (!currentUser || !callId || pcRef.current) return;
 
     let callListener: any;
     let iceListeners: any[] = [];
@@ -165,22 +141,18 @@ export default function VideoCallPage() {
         setCallStatus(data.status);
         const isCaller = data.callerId === currentUser.uid;
         const otherUserId = isCaller ? data.receiverId : data.callerId;
-
-        if (!otherUser && otherUserId) {
-          get(ref(db, `users/${otherUserId}`)).then(userSnap => {
-            if (userSnap.exists()) setOtherUser({ uid: otherUserId, ...userSnap.val() });
-          });
-        }
         
         // Receiver Logic
-        if (data.offer && pc.signalingState === 'stable') {
+        if (data.offer && !isCaller && pc.signalingState === 'stable') {
           await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          await update(snapshot.ref, { answer, status: 'answered' });
+          if(pc.signalingState === 'have-remote-offer') {
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            await update(snapshot.ref, { answer, status: 'answered' });
+          }
         } 
         // Caller Logic
-        else if (data.answer && pc.signalingState === 'have-local-offer') {
+        else if (data.answer && isCaller && pc.signalingState === 'have-local-offer') {
           await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
         }
         
@@ -215,7 +187,7 @@ export default function VideoCallPage() {
         if (callListener && callDbRef) off(callDbRef, 'value', callListener);
         iceListeners.forEach(({ ref, listener }) => off(ref, 'value', listener));
     }
-  }, [currentUser, callId, otherUser, toast]);
+  }, [currentUser, callId, toast]);
 
   const toggleMute = () => {
     setIsMuted(current => {
@@ -240,56 +212,35 @@ export default function VideoCallPage() {
         return newVideoState;
     });
   };
-  
-  const isCallActive = callStatus === 'answered';
-
-  const VideoPlaceholder = ({user, message = "Aguardando vídeo..."}: {user: OtherUser | null, message?: string}) => (
-     <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-white bg-gray-900">
-        {user ? (
-            <>
-                <Avatar className="h-32 w-32 border-4 border-primary">
-                    <AvatarImage src={user?.photoURL} />
-                    <AvatarFallback className="text-4xl">{user?.displayName?.charAt(0)}</AvatarFallback>
-                </Avatar>
-                 <p className="text-lg">{message}</p>
-            </>
-        ) : (
-            <div className="animate-pulse">
-                <div className="h-32 w-32 rounded-full bg-gray-700 mx-auto mb-4"></div>
-                <div className="h-8 w-48 bg-gray-700 rounded-md mx-auto"></div>
-            </div>
-        )}
-    </div>
-  )
 
   return (
     <div className="bg-black h-full flex flex-col text-white relative">
-      <video 
-          ref={remoteVideoRef} 
-          autoPlay 
-          playsInline 
-          className={cn(
-              "absolute top-0 left-0 w-full h-full object-cover z-0 transition-opacity",
-              isCallActive ? "opacity-100" : "opacity-0"
-          )}
-      />
+      {/* Remote Video - Top Half */}
+      <div className="flex-1 w-full h-1/2 bg-gray-900 relative">
+        <video 
+            ref={remoteVideoRef} 
+            autoPlay 
+            playsInline 
+            className="w-full h-full object-cover"
+        />
+        <div className="absolute top-2 left-2 p-2 bg-black/50 rounded-md">
+            <p>Participante</p>
+        </div>
+      </div>
 
-      {isCallActive ? (
+      {/* Local Video - Bottom Half */}
+      <div className="flex-1 w-full h-1/2 bg-gray-800 relative">
         <video 
             ref={localVideoRef} 
             autoPlay 
             playsInline 
             muted 
-            className={cn(
-                "absolute bottom-4 right-4 w-1/4 max-w-[120px] aspect-[9/16] rounded-lg object-cover z-20 border-2 border-white shadow-lg transition-opacity",
-                isVideoOff ? "opacity-0" : "opacity-100"
-            )}
+            className="w-full h-full object-cover"
         />
-      ) : (
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center z-10 bg-black/50">
-          <VideoPlaceholder user={otherUser} message={callStatus === 'ringing' ? 'Chamando...' : 'Conectando...'} />
+         <div className="absolute top-2 left-2 p-2 bg-black/50 rounded-md">
+            <p>Você</p>
         </div>
-      )}
+      </div>
 
 
        {!hasPermissions && (
@@ -319,3 +270,5 @@ export default function VideoCallPage() {
     </div>
   );
 }
+
+    
