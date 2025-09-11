@@ -24,8 +24,8 @@ type CallData = {
   callerId: string;
   receiverId: string;
   status: 'ringing' | 'answered' | 'ended';
-  sdp?: string;
-  type?: 'offer' | 'answer';
+  offer?: RTCSessionDescriptionInit;
+  answer?: RTCSessionDescriptionInit;
 };
 
 type OtherUser = {
@@ -54,58 +54,39 @@ export default function CallPage() {
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   
   const callRef = useRef(ref(db, `calls/${callId}`));
-  const iceCandidateListeners = useRef<(() => void)[]>([]);
-
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
-  const cleanUp = useCallback((isHangUp: boolean) => {
-    iceCandidateListeners.current.forEach(off => off());
-    iceCandidateListeners.current = [];
-
+  const hangUp = useCallback(async (shouldNavigate = true) => {
     if (peerConnectionRef.current) {
-        peerConnectionRef.current.onicecandidate = null;
-        peerConnectionRef.current.ontrack = null;
-        peerConnectionRef.current.close();
-        peerConnectionRef.current = null;
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
     }
     if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => track.stop());
-        localStreamRef.current = null;
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
     }
-     if (isHangUp) {
-        router.push('/');
-    }
-  }, [router]);
-
-  const hangUp = useCallback(async () => {
     if (callId && currentUser) {
       const callSnap = await get(callRef.current);
-      if (callSnap.exists()) {
-          const currentCallData = callSnap.val();
-          if (currentCallData.status !== 'ended') {
-            await update(callRef.current, { status: 'ended' });
-          }
-          if(currentCallData.receiverId === currentUser.uid) {
-             await remove(ref(db, `users/${currentUser.uid}/incomingCall`));
-          }
+      if (callSnap.exists() && callSnap.val().status !== 'ended') {
+        await update(callRef.current, { status: 'ended' });
+        if(callSnap.val().receiverId === currentUser.uid) {
+           await remove(ref(db, `users/${currentUser.uid}/incomingCall`));
+        }
       }
     }
-    cleanUp(true);
-  }, [callId, currentUser, cleanUp]);
+    if (shouldNavigate) {
+      router.push('/');
+    }
+  }, [callId, currentUser, router]);
 
 
   useEffect(() => {
     if (!isMounted || !currentUser || !callId) return;
 
-    let callListener: (() => void) | null = null;
-    const otherUserIceCandidateRefs: any[] = [];
-
-    const initializePeerConnection = async () => {
-        if (peerConnectionRef.current) return;
-
+    const initialize = async () => {
         try {
             localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
             setHasMicPermission(true);
@@ -120,10 +101,11 @@ export default function CallPage() {
             return;
         }
 
-        peerConnectionRef.current = new RTCPeerConnection(iceServers);
+        const pc = new RTCPeerConnection(iceServers);
+        peerConnectionRef.current = pc;
         
         localStreamRef.current.getTracks().forEach(track => {
-            peerConnectionRef.current?.addTrack(track, localStreamRef.current!);
+            pc.addTrack(track, localStreamRef.current!);
         });
         
         remoteStreamRef.current = new MediaStream();
@@ -131,100 +113,89 @@ export default function CallPage() {
             remoteAudioRef.current.srcObject = remoteStreamRef.current;
         }
 
-        peerConnectionRef.current.ontrack = (event) => {
+        pc.ontrack = (event) => {
             event.streams[0].getTracks().forEach(track => {
                 remoteStreamRef.current?.addTrack(track);
             });
-             if (remoteAudioRef.current) {
-                remoteAudioRef.current.srcObject = remoteStreamRef.current;
-            }
-        };
-
-        peerConnectionRef.current.onicecandidate = event => {
-            if (event.candidate) {
-                push(ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`), event.candidate.toJSON());
-            }
         };
     };
 
-    const setupIceListeners = (pc: RTCPeerConnection, otherId: string) => {
-        const otherUserIceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${otherId}`);
-        otherUserIceCandidateRefs.push(otherUserIceCandidatesRef);
-
-        const listener = onValue(otherUserIceCandidatesRef, (snapshot) => {
-            snapshot.forEach((childSnapshot) => {
-                const candidate = new RTCIceCandidate(childSnapshot.val());
-                if (pc.signalingState !== 'closed') {
-                   pc.addIceCandidate(candidate).catch(e => console.error("Error adding received ICE candidate", e));
-                }
-                remove(childSnapshot.ref);
-            });
-        });
-
-        iceCandidateListeners.current.push(() => off(otherUserIceCandidatesRef, 'value', listener));
-    };
-
-    callListener = onValue(callRef.current, async (snapshot) => {
+    const callListener = onValue(callRef.current, async (snapshot) => {
         const data = snapshot.val() as CallData;
-        setCallData(data);
-
+        
         if (!snapshot.exists() || data.status === 'ended') {
             hangUp();
             return;
         }
 
-        const currentOtherUserId = data.callerId === currentUser.uid ? data.receiverId : data.callerId;
+        setCallData(data);
+        const isCaller = data.callerId === currentUser.uid;
+        const otherId = isCaller ? data.receiverId : data.callerId;
 
         if (!otherUser) {
-            get(ref(db, `users/${currentOtherUserId}`)).then(userSnap => {
+            get(ref(db, `users/${otherId}`)).then(userSnap => {
                 if (userSnap.exists()) {
-                    setOtherUser({ uid: currentOtherUserId, ...userSnap.val() });
+                    setOtherUser({ uid: otherId, ...userSnap.val() });
                 }
             });
         }
         
         if (!peerConnectionRef.current) {
-            await initializePeerConnection();
+            await initialize();
         }
-
         const pc = peerConnectionRef.current;
         if (!pc) return;
-        
-        const isCaller = data.callerId === currentUser.uid;
 
-        // Caller logic: create offer if none exists
-        if (isCaller && !data.sdp) {
-            setupIceListeners(pc, data.receiverId);
+        // Setup ICE candidates listeners
+        const iceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`);
+        const otherIceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${otherId}`);
+        pc.onicecandidate = event => {
+            if (event.candidate) {
+                push(iceCandidatesRef, event.candidate.toJSON());
+            }
+        };
+        onValue(otherIceCandidatesRef, (iceSnapshot) => {
+            if (iceSnapshot.exists()) {
+                iceSnapshot.forEach((childSnapshot) => {
+                    if (pc.signalingState !== 'closed') {
+                       pc.addIceCandidate(new RTCIceCandidate(childSnapshot.val())).catch(e => console.error("Error adding ICE", e));
+                    }
+                    remove(childSnapshot.ref);
+                });
+            }
+        });
+
+
+        // Caller creates offer
+        if (isCaller && !data.offer && pc.signalingState === 'stable') {
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
-            await update(snapshot.ref, { type: 'offer', sdp: pc.localDescription?.sdp });
+            await update(snapshot.ref, { offer: offer });
         }
 
-        // Receiver logic: create answer
-        if (data.type === 'offer' && !isCaller && pc.signalingState !== 'have-remote-offer') {
-             await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: data.sdp }));
+        // Receiver creates answer
+        if (!isCaller && data.offer && !data.answer) {
+             if (pc.signalingState !== 'have-remote-offer') {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+             }
              const answer = await pc.createAnswer();
              await pc.setLocalDescription(answer);
-             await update(snapshot.ref, { type: 'answer', sdp: pc.localDescription?.sdp });
-             setupIceListeners(pc, data.callerId);
+             await update(snapshot.ref, { answer: answer });
         }
         
-        // Caller logic: set remote answer
-        if (data.type === 'answer' && isCaller && pc.signalingState === 'have-local-offer') {
-            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }));
+        // Caller sets remote answer
+        if (isCaller && data.answer && pc.signalingState === 'have-local-offer') {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
         }
 
     });
 
     return () => {
-        if (callListener) {
-            off(callRef.current, 'value', callListener);
-        }
-        otherUserIceCandidateRefs.forEach(r => off(r));
-        cleanUp(false);
+      off(callRef.current, 'value', callListener);
+      hangUp(false);
     };
 
-  }, [isMounted, currentUser, callId, hangUp, toast, cleanUp, otherUser]);
+  }, [isMounted, currentUser, callId, hangUp, toast, otherUser]);
 
 
   useEffect(() => {
@@ -310,7 +281,7 @@ export default function CallPage() {
         <Button variant="secondary" size="lg" className="rounded-full h-16 w-16" onClick={toggleMute} disabled={!hasMicPermission}>
           {isMuted ? <MicOff /> : <Mic />}
         </Button>
-        <Button variant="destructive" size="lg" className="rounded-full h-20 w-20" onClick={hangUp}>
+        <Button variant="destructive" size="lg" className="rounded-full h-20 w-20" onClick={() => hangUp(true)}>
           <PhoneOff />
         </Button>
         <Button variant="secondary" size="lg" className="rounded-full h-16 w-16" onClick={toggleSpeaker} disabled={!hasMicPermission}>
@@ -321,3 +292,5 @@ export default function CallPage() {
     </div>
   );
 }
+
+    

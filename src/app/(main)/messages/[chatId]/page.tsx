@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from '@/lib/firebase';
-import { ref, onValue, off, push, serverTimestamp, set, update } from 'firebase/database';
+import { ref, onValue, off, push, serverTimestamp, set, update, get } from 'firebase/database';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -101,7 +101,9 @@ export default function ChatPage() {
   const handleStartCall = async () => {
     if (!currentUser || !otherUser) return;
     
-    const callId = push(ref(db, 'calls')).key;
+    const callRef = push(ref(db, 'calls'));
+    const callId = callRef.key;
+
     if (!callId) {
         toast({ variant: 'destructive', title: 'Error', description: 'Could not create call.' });
         return;
@@ -202,3 +204,5 @@ export default function ChatPage() {
     </>
   );
 }
+
+    
