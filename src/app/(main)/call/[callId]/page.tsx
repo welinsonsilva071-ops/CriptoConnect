@@ -79,74 +79,53 @@ export default function CallPage() {
 
   useEffect(() => {
     setIsMounted(true);
+    // Cleanup function when component unmounts
     return () => {
-        // This cleanup now only handles component unmount logic, not call ending
         if (peerConnectionRef.current) {
             peerConnectionRef.current.close();
         }
         if (localStreamRef.current) {
             localStreamRef.current.getTracks().forEach(track => track.stop());
         }
+        off(callRef.current);
     };
   }, []);
 
   useEffect(() => {
     if (!isMounted || !currentUser || !callId) return;
 
-    let callListener: any;
-    const iceCandidateListeners: { [key: string]: any } = {};
-
     const initializePeerConnection = async () => {
-      try {
-        localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
-        setHasMicPermission(true);
-      } catch (error) {
-        console.error("Mic permission denied:", error);
-        setHasMicPermission(false);
-        toast({
-            variant: 'destructive',
-            title: 'Permissão de Microfone Negada',
-            description: 'Você precisa permitir o acesso ao microfone para fazer chamadas.'
-        });
-        return null;
-      }
-      
-      const pc = new RTCPeerConnection(iceServers);
-      peerConnectionRef.current = pc;
-      
-      localStreamRef.current.getTracks().forEach(track => {
-          pc.addTrack(track, localStreamRef.current!);
-      });
-      
-      pc.ontrack = (event) => {
-          if (remoteAudioRef.current && event.streams[0]) {
-              remoteAudioRef.current.srcObject = event.streams[0];
-          }
-      };
-      
-      pc.onicecandidate = event => {
-          if (event.candidate) {
-              const iceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`);
-              push(iceCandidatesRef, event.candidate.toJSON());
-          }
-      };
-
-      return pc;
-    };
-
-    const setupIceListeners = (pc: RTCPeerConnection, otherId: string) => {
-        const otherIceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${otherId}`);
-        iceCandidateListeners[otherId] = onValue(otherIceCandidatesRef, (snapshot) => {
-            snapshot.forEach((childSnapshot) => {
-                 if (pc.signalingState !== 'closed') {
-                    pc.addIceCandidate(new RTCIceCandidate(childSnapshot.val())).catch(e => console.error("Error adding received ICE candidate", e));
-                 }
-                remove(childSnapshot.ref);
+        try {
+            localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+            setHasMicPermission(true);
+        } catch (error) {
+            console.error("Mic permission denied:", error);
+            setHasMicPermission(false);
+            toast({
+                variant: 'destructive',
+                title: 'Permissão de Microfone Negada',
+                description: 'Você precisa permitir o acesso ao microfone para fazer chamadas.'
             });
+            return null;
+        }
+
+        const pc = new RTCPeerConnection(iceServers);
+        peerConnectionRef.current = pc;
+
+        localStreamRef.current.getTracks().forEach(track => {
+            pc.addTrack(track, localStreamRef.current!);
         });
+
+        pc.ontrack = (event) => {
+            if (remoteAudioRef.current && event.streams[0]) {
+                remoteAudioRef.current.srcObject = event.streams[0];
+            }
+        };
+
+        return pc;
     };
 
-    callListener = onValue(callRef.current, async (snapshot) => {
+    const callListener = onValue(callRef.current, async (snapshot) => {
         const data = snapshot.val() as CallData;
         
         if (!snapshot.exists() || data.status === 'ended') {
@@ -169,32 +148,53 @@ export default function CallPage() {
         }
         
         if (!peerConnectionRef.current) {
-            const pc = await initializePeerConnection();
-            if (pc) {
-                setupIceListeners(pc, otherId);
-            }
+            await initializePeerConnection();
         }
         
         const pc = peerConnectionRef.current;
         if (!pc) return;
 
-        // State machine for signaling
-        if (isCaller && !data.offer && pc.signalingState === 'stable') {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            await update(snapshot.ref, { offer });
+        // Centralized ICE Candidate Handling
+        pc.onicecandidate = event => {
+            if (event.candidate) {
+                const iceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`);
+                push(iceCandidatesRef, event.candidate.toJSON());
+            }
+        };
+
+        const iceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${otherId}`);
+        onValue(iceCandidatesRef, (snapshot) => {
+            snapshot.forEach((childSnapshot) => {
+                 if (pc.signalingState !== 'closed') {
+                    pc.addIceCandidate(new RTCIceCandidate(childSnapshot.val())).catch(e => console.error("Error adding received ICE candidate", e));
+                 }
+                remove(childSnapshot.ref);
+            });
+        }, { onlyOnce: false }); // Listen continuously for candidates
+
+
+        // Signaling State Machine
+        if (isCaller && !data.offer) {
+            if (pc.signalingState === 'stable') {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                await update(snapshot.ref, { offer });
+            }
+        }
+
+        if (data.offer && pc.signalingState !== 'have-remote-offer' && !isCaller) {
+             await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
         }
 
         if (!isCaller && data.offer && !data.answer) {
-             if (pc.signalingState !== 'have-remote-offer') {
-                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+             if (pc.signalingState === 'have-remote-offer') {
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                await update(snapshot.ref, { answer, status: 'answered' });
              }
-             const answer = await pc.createAnswer();
-             await pc.setLocalDescription(answer);
-             await update(snapshot.ref, { answer, status: 'answered' });
         }
         
-        if (data.answer && pc.signalingState === 'have-local-offer') {
+        if (isCaller && data.answer && pc.signalingState !== 'stable') {
              if(pc.remoteDescription?.type !== 'answer') {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
              }
@@ -205,10 +205,7 @@ export default function CallPage() {
     });
 
     return () => {
-      if (callListener) off(callRef.current, 'value', callListener);
-      Object.keys(iceCandidateListeners).forEach(key => {
-          off(ref(db, `calls/${callId}/iceCandidates/${key}`), 'value', iceCandidateListeners[key]);
-      })
+      off(callRef.current, 'value', callListener);
     };
 
   }, [isMounted, currentUser, callId, hangUp, toast, otherUser, router]);
@@ -242,13 +239,10 @@ export default function CallPage() {
   };
 
   const toggleSpeaker = () => {
-    if (remoteAudioRef.current) {
-        const sinkId = isSpeaker ? '' : 'speaker';
-        // @ts-ignore
-        remoteAudioRef.current.setSinkId(sinkId)
-        .then(() => setIsSpeaker(prev => !prev))
-        .catch(err => console.error("Error changing audio output:", err));
-    }
+    // Speaker toggle is complex and varies by browser.
+    // This is a simplified placeholder.
+    setIsSpeaker(prev => !prev);
+    console.log("Speaker toggle is not fully implemented.");
   };
   
   const DisplayStatus = () => {
@@ -304,8 +298,10 @@ export default function CallPage() {
           <Volume2 />
         </Button>
       </div>
-      <audio ref={remoteAudioRef} autoPlay playsInline />
+      <audio ref={remoteAudioRef} autoPlay playsInline muted={isSpeaker ? false : undefined} />
     </div>
   );
 }
+    
+
     
