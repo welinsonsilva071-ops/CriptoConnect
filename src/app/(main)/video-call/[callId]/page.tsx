@@ -219,7 +219,7 @@ export default function VideoCallPage() {
         if (callListener && callDbRef) off(callDbRef, 'value', callListener);
         iceListeners.forEach(({ ref, listener }) => off(ref, 'value', listener));
     }
-  }, [currentUser, callId, toast]);
+  }, [currentUser, callId, otherUser, toast]);
 
   const toggleMute = () => {
     setIsMuted(current => {
@@ -350,3 +350,5 @@ export default function VideoCallPage() {
     </div>
   );
 }
+
+    
