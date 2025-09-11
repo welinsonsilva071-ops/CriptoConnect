@@ -57,8 +57,10 @@ export default function CallPage() {
 
   const hangUp = useCallback(async () => {
     if (pcRef.current) {
-      pcRef.current.close();
-      pcRef.current = null;
+        if (pcRef.current.signalingState !== 'closed') {
+            pcRef.current.close();
+        }
+        pcRef.current = null;
     }
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => track.stop());
@@ -75,45 +77,59 @@ export default function CallPage() {
             console.error("Error during hangup update:", e);
         }
     }
-    router.push('/');
+    if (!router.asPath.startsWith('/messages')) {
+       router.push('/');
+    }
   }, [callId, currentUser, router]);
-
 
   useEffect(() => {
     setIsMounted(true);
     let callListener: any;
+    let iceListeners: any[] = [];
   
     const cleanup = () => {
-      if (pcRef.current) {
-        pcRef.current.close();
+        if (callListener && callDbRef.current) {
+            off(callDbRef.current, 'value', callListener);
+        }
+        iceListeners.forEach(({ ref, listener }) => {
+            if(ref) off(ref, 'value', listener);
+        });
+        iceListeners = [];
+    
+        if (pcRef.current && pcRef.current.signalingState !== 'closed') {
+            pcRef.current.close();
+        }
         pcRef.current = null;
-      }
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => track.stop());
-        localStreamRef.current = null;
-      }
-      if (callListener) {
-        off(callDbRef.current, 'value', callListener);
-      }
+    
+        if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach(track => track.stop());
+            localStreamRef.current = null;
+        }
     };
   
-    return cleanup;
-  }, []);
+    // Add this to handle user leaving the page
+    window.addEventListener('beforeunload', hangUp);
+
+    return () => {
+        window.removeEventListener('beforeunload', hangUp);
+        cleanup();
+    }
+  }, [hangUp]);
   
 
   useEffect(() => {
     if (!isMounted || !currentUser || !callId) return;
 
+    let callValueListener: any;
+    let iceValueListeners: { ref: any, listener: any }[] = [];
+
     const setupCall = async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             localStreamRef.current = stream;
-            
-            // Start with local audio tracks disabled if muted
             stream.getAudioTracks().forEach(track => {
                 track.enabled = !isMuted;
             });
-
         } catch (error) {
             console.error("Mic permission denied:", error);
             setHasMicPermission(false);
@@ -133,7 +149,7 @@ export default function CallPage() {
         });
 
         pc.ontrack = (event) => {
-            if (remoteAudioRef.current) {
+            if (remoteAudioRef.current && event.streams[0]) {
                 remoteAudioRef.current.srcObject = event.streams[0];
             }
         };
@@ -145,7 +161,7 @@ export default function CallPage() {
             }
         };
 
-        const callListener = onValue(callDbRef.current, async (snapshot) => {
+        callValueListener = onValue(callDbRef.current, async (snapshot) => {
             if (!snapshot.exists()) {
                 toast({ title: 'Chamada não encontrada', description: 'Esta chamada não existe mais.'});
                 hangUp();
@@ -154,11 +170,10 @@ export default function CallPage() {
 
             const data = snapshot.val() as CallData;
             setCallData(data);
-
             const isCaller = data.callerId === currentUser.uid;
             const otherUserId = isCaller ? data.receiverId : data.callerId;
 
-            if (!otherUser) {
+            if (!otherUser && otherUserId) {
                  get(ref(db, `users/${otherUserId}`)).then(userSnap => {
                     if (userSnap.exists()) {
                         setOtherUser({ uid: otherUserId, ...userSnap.val() });
@@ -173,67 +188,59 @@ export default function CallPage() {
             }
 
             // --- Signaling Logic ---
-            if (data.offer) {
-                if (pc.signalingState !== 'stable') {
-                    // This is unexpected for the caller in this state, maybe log it
-                }
-                const remoteDesc = new RTCSessionDescription(data.offer);
-                if (pc.remoteDescription?.type !== remoteDesc.type) {
-                  await pc.setRemoteDescription(remoteDesc);
-                }
-
-
-                if (!isCaller) { // Receiver creates answer
-                    const answer = await pc.createAnswer();
-                    await pc.setLocalDescription(answer);
-                    await update(snapshot.ref, { answer, status: 'answered' });
-                }
+            if (data.offer && pc.signalingState === 'stable') { // Receiver side
+                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                await update(snapshot.ref, { answer, status: 'answered' });
                 
-                // Process any queued candidates
-                iceCandidateQueue.current.forEach(candidate => pc.addIceCandidate(candidate));
+                // Process any queued candidates now that remote description is set
+                iceCandidateQueue.current.forEach(candidate => pc.addIceCandidate(candidate).catch(e => console.error("Error adding queued ICE candidate", e)));
                 iceCandidateQueue.current = [];
+
+            } else if (data.answer && pc.signalingState === 'have-local-offer') { // Caller side
+                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+
+                 // Process any queued candidates now that remote description is set
+                 iceCandidateQueue.current.forEach(candidate => pc.addIceCandidate(candidate).catch(e => console.error("Error adding queued ICE candidate", e)));
+                 iceCandidateQueue.current = [];
             }
             
-            if (data.answer && isCaller) {
-                const remoteDesc = new RTCSessionDescription(data.answer);
-                if (pc.remoteDescription?.type !== remoteDesc.type) {
-                    await pc.setRemoteDescription(remoteDesc);
-                }
+            // If I am the caller and there's no offer, create one.
+            if (isCaller && !data.offer) {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                await update(callDbRef.current, { offer });
+            }
+
+             // Setup ICE listeners for the other user if not already done
+            if (otherUserId && !iceValueListeners.find(l => l.ref.toString().includes(otherUserId))) {
+                const otherIceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${otherUserId}`);
+                const iceListener = onValue(otherIceCandidatesRef, (iceSnapshot) => {
+                    iceSnapshot.forEach((childSnapshot) => {
+                        const candidate = new RTCIceCandidate(childSnapshot.val());
+                        if (pc.remoteDescription) {
+                            pc.addIceCandidate(candidate).catch(e => console.error("Error adding received ICE candidate", e));
+                        } else {
+                            // Queue candidate if remote description is not set yet
+                            iceCandidateQueue.current.push(candidate);
+                        }
+                        remove(childSnapshot.ref);
+                    });
+                });
+                iceValueListeners.push({ ref: otherIceCandidatesRef, listener: iceListener });
             }
         });
-
-        // Setup ICE listeners for the other user
-        const otherUserId = callData ? (callData.callerId === currentUser.uid ? callData.receiverId : callData.callerId) : (await get(callDbRef.current)).val().receiverId;
-
-        if(otherUserId){
-            const otherIceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${otherUserId}`);
-            onValue(otherIceCandidatesRef, (iceSnapshot) => {
-                iceSnapshot.forEach((childSnapshot) => {
-                    const candidate = new RTCIceCandidate(childSnapshot.val());
-                    if (pc.remoteDescription) {
-                        pc.addIceCandidate(candidate).catch(e => console.error("Error adding received ICE candidate", e));
-                    } else {
-                        // Queue candidate if remote description is not set yet
-                        iceCandidateQueue.current.push(candidate);
-                    }
-                    remove(childSnapshot.ref);
-                });
-            });
-        }
-        
-        // Caller creates offer
-        const initialCallData = (await get(callDbRef.current)).val();
-        if (initialCallData.callerId === currentUser.uid && !initialCallData.offer) {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            await update(callDbRef.current, { offer });
-        }
-
     };
     
     setupCall();
+    
+    return () => {
+        if (callValueListener) off(callDbRef.current, 'value', callValueListener);
+        iceValueListeners.forEach(({ ref, listener }) => off(ref, 'value', listener));
+    }
 
-  }, [isMounted, currentUser, callId, hangUp, toast, otherUser]);
+  }, [isMounted, currentUser, callId, hangUp, toast]);
 
 
   useEffect(() => {
@@ -282,7 +289,8 @@ export default function CallPage() {
     }
     switch (callData?.status) {
       case 'ringing':
-        return <p className="text-muted-foreground mt-2">Chamando...</p>;
+        const isCaller = callData?.callerId === currentUser?.uid;
+        return <p className="text-muted-foreground mt-2">{isCaller ? 'Chamando...' : 'Recebendo chamada...'}</p>;
       case 'answered':
         return <p className="text-muted-foreground mt-2">{formatDuration(callDuration)}</p>;
       case 'ended':
@@ -337,8 +345,10 @@ export default function CallPage() {
         </Button>
       </div>
       
-      <audio ref={remoteAudioRef} autoPlay playsInline />
+      <audio ref={remoteAudioRef} autoPlay playsInline muted={!isSpeakerOn} />
     </div>
   );
 }
+    
+
     
