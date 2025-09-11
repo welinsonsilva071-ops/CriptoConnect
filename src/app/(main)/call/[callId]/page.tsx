@@ -54,12 +54,17 @@ export default function CallPage() {
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   
   const callRef = useRef(ref(db, `calls/${callId}`));
+  const iceCandidateListeners = useRef<(() => void)[]>([]);
+
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
   const cleanUp = useCallback((isHangUp: boolean) => {
+    iceCandidateListeners.current.forEach(off => off());
+    iceCandidateListeners.current = [];
+
     if (peerConnectionRef.current) {
         peerConnectionRef.current.onicecandidate = null;
         peerConnectionRef.current.ontrack = null;
@@ -96,7 +101,8 @@ export default function CallPage() {
   useEffect(() => {
     if (!isMounted || !currentUser || !callId) return;
 
-    const otherUserId = callData?.callerId === currentUser.uid ? callData?.receiverId : callData?.callerId;
+    let callListener: (() => void) | null = null;
+    const otherUserIceCandidateRefs: any[] = [];
 
     const initializePeerConnection = async () => {
         if (peerConnectionRef.current) return;
@@ -144,16 +150,22 @@ export default function CallPage() {
 
     const setupIceListeners = (pc: RTCPeerConnection, otherId: string) => {
         const otherUserIceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${otherId}`);
-        onValue(otherUserIceCandidatesRef, (snapshot) => {
+        otherUserIceCandidateRefs.push(otherUserIceCandidatesRef);
+
+        const listener = onValue(otherUserIceCandidatesRef, (snapshot) => {
             snapshot.forEach((childSnapshot) => {
                 const candidate = new RTCIceCandidate(childSnapshot.val());
-                pc.addIceCandidate(candidate).catch(e => console.error("Error adding received ICE candidate", e));
+                if (pc.signalingState !== 'closed') {
+                   pc.addIceCandidate(candidate).catch(e => console.error("Error adding received ICE candidate", e));
+                }
                 remove(childSnapshot.ref);
             });
         });
+
+        iceCandidateListeners.current.push(() => off(otherUserIceCandidatesRef, 'value', listener));
     };
 
-    const callListener = onValue(callRef.current, async (snapshot) => {
+    callListener = onValue(callRef.current, async (snapshot) => {
         const data = snapshot.val() as CallData;
         setCallData(data);
 
@@ -179,36 +191,30 @@ export default function CallPage() {
         const pc = peerConnectionRef.current;
         if (!pc) return;
         
-        // Caller creates offer
-        if (data.status === 'answered' && data.callerId === currentUser.uid && pc.signalingState === 'stable') {
+        const isCaller = data.callerId === currentUser.uid;
+
+        if (data.type === 'offer' && !isCaller && pc.signalingState !== 'have-remote-offer') {
+             await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: data.sdp }));
+             const answer = await pc.createAnswer();
+             await pc.setLocalDescription(answer);
+             await update(snapshot.ref, { type: 'answer', sdp: pc.localDescription?.sdp });
+             setupIceListeners(pc, data.callerId);
+        } else if (data.type === 'answer' && isCaller && pc.signalingState === 'have-local-offer') {
+            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }));
+        } else if (data.status === 'answered' && isCaller && pc.signalingState === 'stable') {
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             await update(snapshot.ref, { type: 'offer', sdp: pc.localDescription?.sdp });
             setupIceListeners(pc, data.receiverId);
         }
 
-        // Receiver answers offer
-        if (data.type === 'offer' && data.receiverId === currentUser.uid && pc.signalingState === 'have-remote-offer') {
-             // This condition is now implicitly handled by the next one, but good for clarity
-        }
-        
-        if(data.type === 'offer' && pc.signalingState !== 'have-remote-offer' && data.receiverId === currentUser.uid){
-             await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: data.sdp }));
-             const answer = await pc.createAnswer();
-             await pc.setLocalDescription(answer);
-             await update(snapshot.ref, { type: 'answer', sdp: pc.localDescription?.sdp });
-             setupIceListeners(pc, data.callerId);
-        }
-
-        // Caller receives answer
-        if (data.type === 'answer' && data.callerId === currentUser.uid && pc.signalingState === 'have-local-offer') {
-            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }));
-        }
-
     });
 
     return () => {
-        off(callRef.current, 'value', callListener);
+        if (callListener) {
+            off(callRef.current, 'value', callListener);
+        }
+        otherUserIceCandidateRefs.forEach(r => off(r));
         cleanUp(false);
     };
 
@@ -311,5 +317,3 @@ export default function CallPage() {
     </div>
   );
 }
-
-    
