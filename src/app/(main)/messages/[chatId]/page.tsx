@@ -9,7 +9,7 @@ import { ref, onValue, off, push, serverTimestamp, set, update, get } from 'fire
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ArrowLeft, Send, Phone } from 'lucide-react';
+import { ArrowLeft, Send, Phone, Video } from 'lucide-react';
 import Link from 'next/link';
 import MessageBubble from '@/components/messages/message-bubble';
 import startChat from '@/lib/start-chat';
@@ -98,7 +98,7 @@ export default function ChatPage() {
 
   }, [currentUser, chatId, router, toast]);
 
-  const handleStartCall = async () => {
+  const handleStartCall = async (type: 'audio' | 'video') => {
     if (!currentUser || !otherUser) return;
     
     const callRef = push(ref(db, 'calls'));
@@ -113,6 +113,7 @@ export default function ChatPage() {
         callerId: currentUser.uid,
         receiverId: otherUser.uid,
         status: 'ringing',
+        type: type,
         createdAt: serverTimestamp(),
     };
 
@@ -122,7 +123,8 @@ export default function ChatPage() {
 
     try {
         await update(ref(db), updates);
-        router.push(`/call/${callId}`);
+        const callUrl = type === 'video' ? `/video-call/${callId}` : `/call/${callId}`;
+        router.push(callUrl);
     } catch (error) {
         console.error("Error starting call:", error);
         toast({ variant: 'destructive', title: 'Error', description: 'Could not start call.' });
@@ -176,9 +178,14 @@ export default function ChatPage() {
             </>
           )}
         </div>
-        <Button variant="ghost" size="icon" onClick={handleStartCall}>
-          <Phone />
-        </Button>
+        <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={() => handleStartCall('video')}>
+                <Video />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => handleStartCall('audio')}>
+                <Phone />
+            </Button>
+        </div>
       </header>
 
       <main className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -204,5 +211,3 @@ export default function ChatPage() {
     </>
   );
 }
-
-    

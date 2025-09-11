@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { ref, onValue, off, get, update } from 'firebase/database';
-import { MessageCircle, Users, Library, History, Phone, PhoneOff } from 'lucide-react';
+import { MessageCircle, Users, Library, History, Phone, PhoneOff, Video } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
@@ -20,6 +20,7 @@ type Call = {
   callerId: string;
   receiverId: string;
   status: 'ringing' | 'answered' | 'ended';
+  type: 'audio' | 'video';
   caller: {
     displayName: string;
     photoURL?: string;
@@ -57,7 +58,7 @@ export default function MainLayout({
   const toastIdRef = useRef<string | null>(null);
 
   const isMessagesPage = pathname.includes('/messages/');
-  const isCallPage = pathname.includes('/call/');
+  const isCallPage = pathname.includes('/call/') || pathname.includes('/video-call/');
 
   useEffect(() => {
     // If there's an incoming call and no toast is currently shown for it
@@ -70,7 +71,8 @@ export default function MainLayout({
 
         try {
           await update(ref(db), updates);
-          router.push(`/call/${incomingCall.id}`);
+          const callUrl = incomingCall.type === 'video' ? `/video-call/${incomingCall.id}` : `/call/${incomingCall.id}`;
+          router.push(callUrl);
         } catch (error) {
           console.error("Error accepting call:", error);
         } finally {
@@ -97,6 +99,8 @@ export default function MainLayout({
           }
         }
       };
+      
+      const CallIcon = incomingCall.type === 'video' ? Video : Phone;
 
       const { id } = toast({
         duration: Infinity,
@@ -108,14 +112,14 @@ export default function MainLayout({
             </Avatar>
             <div className="flex-grow">
               <p className="font-bold">{incomingCall.caller.displayName}</p>
-              <p className="text-sm text-muted-foreground">Chamada de voz...</p>
+              <p className="text-sm text-muted-foreground">Chamada de {incomingCall.type === 'video' ? 'vídeo' : 'voz'}...</p>
             </div>
             <div className="flex gap-2">
               <Button variant="destructive" size="icon" onClick={handleReject}>
                 <PhoneOff className="h-5 w-5" />
               </Button>
               <Button variant="default" size="icon" className="bg-green-500 hover:bg-green-600" onClick={handleAccept}>
-                <Phone className="h-5 w-5" />
+                <CallIcon className="h-5 w-5" />
               </Button>
             </div>
           </div>
