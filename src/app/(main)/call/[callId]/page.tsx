@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from '@/lib/firebase';
-import { ref, onValue, off, update, remove, push, get } from 'firebase/database';
+import { ref, onValue, off, update, remove, push, get, serverTimestamp } from 'firebase/database';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Mic, MicOff, PhoneOff, Volume2 } from 'lucide-react';
@@ -46,6 +46,7 @@ export default function CallPage() {
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeaker, setIsSpeaker] = useState(false);
   const [hasMicPermission, setHasMicPermission] = useState(true);
+  const [isMounted, setIsMounted] = useState(false);
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -54,7 +55,11 @@ export default function CallPage() {
   
   const callRef = useRef(ref(db, `calls/${callId}`));
 
-  const cleanUp = useCallback(() => {
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  const cleanUp = useCallback((isHangUp: boolean) => {
     if (peerConnectionRef.current) {
         peerConnectionRef.current.onicecandidate = null;
         peerConnectionRef.current.ontrack = null;
@@ -65,27 +70,31 @@ export default function CallPage() {
         localStreamRef.current.getTracks().forEach(track => track.stop());
         localStreamRef.current = null;
     }
-  }, []);
+     if (isHangUp) {
+        router.push('/');
+    }
+  }, [router]);
 
   const hangUp = useCallback(async () => {
-    cleanUp();
     if (callId && currentUser) {
       const callSnap = await get(callRef.current);
-      if (callSnap.exists() && callSnap.val().status !== 'ended') {
-          await update(callRef.current, { status: 'ended' });
-      }
-      // Ensure incomingCall is cleared for the current user if they are the receiver
-      const currentCallData = callSnap.val();
-      if(currentCallData && currentCallData.receiverId === currentUser.uid) {
-         await remove(ref(db, `users/${currentUser.uid}/incomingCall`));
+      if (callSnap.exists()) {
+          const currentCallData = callSnap.val();
+          if (currentCallData.status !== 'ended') {
+            await update(callRef.current, { status: 'ended' });
+          }
+           // Ensure incomingCall is cleared for the current user if they are the receiver
+          if(currentCallData.receiverId === currentUser.uid) {
+             await remove(ref(db, `users/${currentUser.uid}/incomingCall`));
+          }
       }
     }
-    router.push('/');
-  }, [callId, currentUser, router, cleanUp]);
+    cleanUp(true);
+  }, [callId, currentUser, cleanUp]);
 
 
   useEffect(() => {
-    if (!currentUser || !callId) return;
+    if (!isMounted || !currentUser || !callId) return;
 
     let iceCandidateListeners: any[] = [];
     
@@ -151,10 +160,13 @@ export default function CallPage() {
             await pc.setLocalDescription(answer);
             await update(callRef.current, { type: 'answer', sdp: pc.localDescription?.sdp });
         } else if (data.type === 'answer' && data.callerId === currentUser.uid && pc.signalingState !== 'stable') {
-            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }));
+            if (pc.currentRemoteDescription?.sdp !== data.sdp) {
+              await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }));
+            }
         }
 
         if (data.status === 'answered' && data.callerId === currentUser.uid && !pc.currentRemoteDescription) {
+             if (pc.signalingState === 'have-local-offer') return;
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             await update(callRef.current, { type: 'offer', sdp: pc.localDescription?.sdp });
@@ -174,6 +186,7 @@ export default function CallPage() {
                 if(pc.signalingState !== 'closed' && candidate) {
                     pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.error("Error adding received ICE candidate", e));
                 }
+                childSnapshot.ref.remove(); // Remove candidate after using it
             });
         });
         iceCandidateListeners.push({ ref: otherUserIceCandidatesRef, listener: iceListener });
@@ -182,10 +195,10 @@ export default function CallPage() {
     return () => {
         off(callRef.current, 'value', callListener);
         iceCandidateListeners.forEach(item => off(item.ref, 'value', item.listener));
-        cleanUp();
+        cleanUp(false);
     };
 
-  }, [currentUser, callId, hangUp, toast, cleanUp]);
+  }, [isMounted, currentUser, callId, hangUp, toast, cleanUp]);
 
 
   useEffect(() => {
@@ -226,6 +239,22 @@ export default function CallPage() {
         .catch(err => console.error("Error changing audio output:", err));
     }
   };
+  
+  const DisplayStatus = () => {
+    if (!isMounted) {
+      return <p className="text-muted-foreground mt-2">Conectando...</p>;
+    }
+    switch (callData?.status) {
+      case 'ringing':
+        return <p className="text-muted-foreground mt-2">Chamando...</p>;
+      case 'answered':
+        return <p className="text-muted-foreground mt-2">{formatDuration(callDuration)}</p>;
+      case 'ended':
+        return <p className="text-muted-foreground mt-2">Chamada encerrada</p>;
+      default:
+        return <p className="text-muted-foreground mt-2">Conectando...</p>;
+    }
+  };
 
   return (
     <div className="bg-background h-full flex flex-col justify-between items-center text-center p-8">
@@ -239,11 +268,7 @@ export default function CallPage() {
                 <h1 className="text-3xl font-bold">{otherUser.displayName}</h1>
             </>
         )}
-         <p className="text-muted-foreground mt-2">
-            {callData?.status === 'ringing' && 'Chamando...'}
-            {callData?.status === 'answered' && formatDuration(callDuration)}
-            {callData?.status === 'ended' && 'Chamada encerrada'}
-        </p>
+        <DisplayStatus />
       </div>
 
        {!hasMicPermission && (
@@ -272,3 +297,5 @@ export default function CallPage() {
     </div>
   );
 }
+
+    
