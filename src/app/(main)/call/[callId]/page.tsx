@@ -330,7 +330,3 @@ export default function CallPage() {
         </div>
     );
 }
-
-    
-
-    
