@@ -141,6 +141,8 @@ export default function MainLayout({
                      setIncomingCall({ id: userData.incomingCall, ...callData, caller: callerSnap.val() });
                    }
                 } else {
+                   // Clear incoming call if status is not 'ringing'
+                   update(ref(db, `users/${currentUser.uid}`), { incomingCall: null });
                    setIncomingCall(null);
                 }
               }
