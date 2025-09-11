@@ -56,7 +56,9 @@ export default function VideoCallPage() {
 
   const hangUp = useCallback(async () => {
     if (pcRef.current) {
-      pcRef.current.close();
+      if (pcRef.current.signalingState !== 'closed') {
+        pcRef.current.close();
+      }
       pcRef.current = null;
     }
     if (localStreamRef.current) {
@@ -89,17 +91,21 @@ export default function VideoCallPage() {
         }
     });
     
-    window.addEventListener('beforeunload', hangUp);
+    const handleBeforeUnload = () => {
+      hangUp();
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => {
         off(callDbRef, 'value', callListener);
-        window.removeEventListener('beforeunload', hangUp);
+        window.removeEventListener('beforeunload', handleBeforeUnload);
     }
   }, [callId, hangUp, toast]);
 
 
   useEffect(() => {
-    if (!currentUser || !callId) return;
+    if (!currentUser || !callId || pcRef.current) return;
 
     let callListener: any;
     let iceListeners: any[] = [];
@@ -206,10 +212,10 @@ export default function VideoCallPage() {
     setupCall();
     
     return () => {
-        if (callListener && callDbRef.current) off(callDbRef.current, 'value', callListener);
+        if (callListener && callDbRef) off(callDbRef, 'value', callListener);
         iceListeners.forEach(({ ref, listener }) => off(ref, 'value', listener));
     }
-  }, [currentUser, callId, hangUp, toast]);
+  }, [currentUser, callId]);
 
   const toggleMute = () => {
     setIsMuted(current => {
@@ -244,12 +250,8 @@ export default function VideoCallPage() {
       <div className="flex-1 flex flex-col">
         {isCallActive ? (
           <>
-            {/* Remote Video (Top 50%) */}
-            <div className="w-full h-1/2 bg-black flex items-center justify-center">
-              <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
-            </div>
-            {/* Local Video (Bottom 50%) */}
-            <div className="w-full h-1/2 bg-gray-900 flex items-center justify-center">
+            {/* Local Video (Top 50%) */}
+            <div className="w-full h-1/2 bg-gray-900 flex items-center justify-center relative">
               <video 
                 ref={localVideoRef} 
                 autoPlay 
@@ -258,12 +260,27 @@ export default function VideoCallPage() {
                 className={cn("w-full h-full object-cover", isVideoOff && "hidden")}
               />
                {isVideoOff && (
-                  <div className="flex flex-col items-center gap-2">
+                  <div className="flex flex-col items-center gap-2 text-white">
                     <Avatar className="h-24 w-24">
                         <AvatarImage src={currentUser?.photoURL || undefined} />
                         <AvatarFallback>{currentUser?.displayName?.charAt(0)}</AvatarFallback>
                     </Avatar>
                     <p>Câmera desligada</p>
+                  </div>
+                )}
+            </div>
+             {/* Remote Video (Bottom 50%) */}
+            <div className="w-full h-1/2 bg-black flex items-center justify-center relative">
+              <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
+               {!remoteVideoRef.current?.srcObject && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white">
+                    {otherUser && (
+                        <Avatar className="h-24 w-24">
+                            <AvatarImage src={otherUser?.photoURL} />
+                            <AvatarFallback>{otherUser?.displayName?.charAt(0)}</AvatarFallback>
+                        </Avatar>
+                    )}
+                    <p>Aguardando vídeo...</p>
                   </div>
                 )}
             </div>
@@ -318,3 +335,5 @@ export default function VideoCallPage() {
   );
 }
  
+
+    

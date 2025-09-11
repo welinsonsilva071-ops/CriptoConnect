@@ -83,39 +83,32 @@ export default function CallPage() {
   useEffect(() => {
     setIsMounted(true);
     let callListener: any;
-    let iceListeners: any[] = [];
-  
-    const cleanup = () => {
-        if (callListener && callDbRef.current) {
-            off(callDbRef.current, 'value', callListener);
-        }
-        iceListeners.forEach(({ ref, listener }) => {
-            if(ref) off(ref, 'value', listener);
-        });
-        iceListeners = [];
     
-        if (pcRef.current && pcRef.current.signalingState !== 'closed') {
-            pcRef.current.close();
-        }
-        pcRef.current = null;
-    
-        if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach(track => track.stop());
-            localStreamRef.current = null;
-        }
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+        hangUp();
     };
-  
-    window.addEventListener('beforeunload', hangUp);
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    const callDbCurrentRef = callDbRef.current;
+    callListener = onValue(callDbCurrentRef, (snapshot) => {
+      if (!snapshot.exists() || snapshot.val().status === 'ended') {
+        toast({ title: 'Chamada Encerrada' });
+        hangUp();
+      }
+    });
 
     return () => {
-        window.removeEventListener('beforeunload', hangUp);
-        cleanup();
+        window.removeEventListener('beforeunload', handleBeforeUnload);
+        if (callListener && callDbCurrentRef) {
+            off(callDbCurrentRef, 'value', callListener);
+        }
     }
-  }, [hangUp]);
+  }, [hangUp, toast]);
   
 
   useEffect(() => {
-    if (!isMounted || !currentUser || !callId) return;
+    if (!isMounted || !currentUser || !callId || pcRef.current) return;
 
     let callValueListener: any;
     let iceValueListeners: { ref: any, listener: any }[] = [];
@@ -159,9 +152,7 @@ export default function CallPage() {
         };
 
         callValueListener = onValue(callDbRef.current, async (snapshot) => {
-            if (!snapshot.exists()) {
-                toast({ title: 'Chamada não encontrada', description: 'Esta chamada não existe mais.'});
-                hangUp();
+            if (!snapshot.exists() || !pcRef.current) {
                 return;
             }
 
@@ -178,30 +169,26 @@ export default function CallPage() {
                 });
             }
 
-            if (data.status === 'ended' && pc.signalingState !== 'closed') {
-                toast({ title: 'Chamada Encerrada' });
-                hangUp();
-                return;
-            }
-
             // --- Signaling Logic ---
-            if (isCaller) {
-              if (data.answer && pc.signalingState === 'have-local-offer') {
-                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-                iceCandidateQueue.current.forEach(candidate => pc.addIceCandidate(candidate).catch(e => console.error("Error adding queued ICE candidate", e)));
-                iceCandidateQueue.current = [];
-              }
-            } else { // Receiver
-              if (data.offer && pc.signalingState === 'stable') {
+            if (pc.signalingState === 'closed') return;
+
+            // Receiver: Set remote offer and create answer
+            if (data.offer && pc.signalingState === 'stable') {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
                 await update(snapshot.ref, { answer, status: 'answered' });
                 iceCandidateQueue.current.forEach(candidate => pc.addIceCandidate(candidate).catch(e => console.error("Error adding queued ICE candidate", e)));
                 iceCandidateQueue.current = [];
-              }
+            } 
+            // Caller: Set remote answer
+            else if (data.answer && pc.signalingState === 'have-local-offer') {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+                iceCandidateQueue.current.forEach(candidate => pc.addIceCandidate(candidate).catch(e => console.error("Error adding queued ICE candidate", e)));
+                iceCandidateQueue.current = [];
             }
             
+            // Caller: Create offer
             if (isCaller && !data.offer && pc.signalingState === 'stable') {
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
@@ -214,7 +201,7 @@ export default function CallPage() {
                 const iceListener = onValue(otherIceCandidatesRef, (iceSnapshot) => {
                     iceSnapshot.forEach((childSnapshot) => {
                         const candidate = new RTCIceCandidate(childSnapshot.val());
-                        if (pc.remoteDescription && pc.signalingState !== 'closed') {
+                        if (pc.remoteDescription) {
                             pc.addIceCandidate(candidate).catch(e => console.error("Error adding received ICE candidate", e));
                         } else {
                             iceCandidateQueue.current.push(candidate);
@@ -234,7 +221,7 @@ export default function CallPage() {
         iceValueListeners.forEach(({ ref, listener }) => off(ref, 'value', listener));
     }
 
-  }, [isMounted, currentUser, callId, hangUp, toast]);
+  }, [isMounted, currentUser, callId]);
 
 
   useEffect(() => {
