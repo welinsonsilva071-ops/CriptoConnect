@@ -46,12 +46,10 @@ export default function CallPage() {
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const [hasMicPermission, setHasMicPermission] = useState(true);
-  const [isMounted, setIsMounted] = useState(false);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
-  const callDbRef = useRef(ref(db, `calls/${callId}`));
   const iceCandidateQueue = useRef<RTCIceCandidate[]>([]);
 
 
@@ -69,9 +67,10 @@ export default function CallPage() {
     
     if (callId && currentUser) {
         try {
-            const callSnap = await get(callDbRef.current);
+            const callRef = ref(db, `calls/${callId}`);
+            const callSnap = await get(callRef);
             if (callSnap.exists() && callSnap.val().status !== 'ended') {
-                await update(callDbRef.current, { status: 'ended' });
+                await update(callRef, { status: 'ended' });
             }
         } catch(e) {
             console.error("Error during hangup update:", e);
@@ -81,37 +80,34 @@ export default function CallPage() {
   }, [callId, currentUser, router]);
 
   useEffect(() => {
-    setIsMounted(true);
-    let callListener: any;
+    const callDbRef = ref(db, `calls/${callId}`);
+
+    const callListener = onValue(callDbRef, (snapshot) => {
+        if (!snapshot.exists() || snapshot.val().status === 'ended') {
+            toast({ title: 'Chamada Encerrada' });
+            hangUp();
+        }
+    });
     
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-        hangUp();
+    const handleBeforeUnload = () => {
+      hangUp();
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
 
-    const callDbCurrentRef = callDbRef.current;
-    callListener = onValue(callDbCurrentRef, (snapshot) => {
-      if (!snapshot.exists() || snapshot.val().status === 'ended') {
-        toast({ title: 'Chamada Encerrada' });
-        hangUp();
-      }
-    });
-
     return () => {
+        off(callDbRef, 'value', callListener);
         window.removeEventListener('beforeunload', handleBeforeUnload);
-        if (callListener && callDbCurrentRef) {
-            off(callDbCurrentRef, 'value', callListener);
-        }
     }
-  }, [hangUp, toast]);
+  }, [callId, hangUp, toast]);
   
 
   useEffect(() => {
-    if (!isMounted || !currentUser || !callId || pcRef.current) return;
+    if (!currentUser || !callId || pcRef.current) return;
 
     let callValueListener: any;
     let iceValueListeners: { ref: any, listener: any }[] = [];
+    const callDbRef = ref(db, `calls/${callId}`);
 
     const setupCall = async () => {
         try {
@@ -151,12 +147,15 @@ export default function CallPage() {
             }
         };
 
-        callValueListener = onValue(callDbRef.current, async (snapshot) => {
-            if (!snapshot.exists() || !pcRef.current) {
+        callValueListener = onValue(callDbRef, async (snapshot) => {
+            if (!snapshot.exists()) {
                 return;
             }
 
             const data = snapshot.val() as CallData;
+            const pc = pcRef.current;
+            if (!pc || pc.signalingState === 'closed') return;
+
             setCallData(data);
             const isCaller = data.callerId === currentUser.uid;
             const otherUserId = isCaller ? data.receiverId : data.callerId;
@@ -170,7 +169,12 @@ export default function CallPage() {
             }
 
             // --- Signaling Logic ---
-            if (pc.signalingState === 'closed') return;
+            // Caller: Create offer
+            if (isCaller && !data.offer && pc.signalingState === 'stable') {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                await update(callDbRef, { offer });
+            }
 
             // Receiver: Set remote offer and create answer
             if (data.offer && pc.signalingState === 'stable') {
@@ -186,13 +190,6 @@ export default function CallPage() {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
                 iceCandidateQueue.current.forEach(candidate => pc.addIceCandidate(candidate).catch(e => console.error("Error adding queued ICE candidate", e)));
                 iceCandidateQueue.current = [];
-            }
-            
-            // Caller: Create offer
-            if (isCaller && !data.offer && pc.signalingState === 'stable') {
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-                await update(callDbRef.current, { offer });
             }
             
              // Setup ICE listeners for the other user if not already done
@@ -217,11 +214,11 @@ export default function CallPage() {
     setupCall();
     
     return () => {
-        if (callValueListener) off(callDbRef.current, 'value', callValueListener);
+        if (callValueListener && callDbRef) off(callDbRef, 'value', callValueListener);
         iceValueListeners.forEach(({ ref, listener }) => off(ref, 'value', listener));
     }
 
-  }, [isMounted, currentUser, callId]);
+  }, [currentUser, callId, otherUser]);
 
 
   useEffect(() => {
@@ -265,7 +262,7 @@ export default function CallPage() {
   };
   
   const DisplayStatus = () => {
-    if (!isMounted) {
+    if (!currentUser) {
       return <p className="text-muted-foreground mt-2">Conectando...</p>;
     }
     switch (callData?.status) {

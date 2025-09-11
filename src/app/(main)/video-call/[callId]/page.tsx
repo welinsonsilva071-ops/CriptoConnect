@@ -150,9 +150,11 @@ export default function VideoCallPage() {
         };
 
         callListener = onValue(callDbRef, async (snapshot) => {
-            if (!snapshot.exists() || !pcRef.current) return;
+            if (!snapshot.exists()) return;
             
             const pc = pcRef.current;
+            if (!pc || pc.signalingState === 'closed') return;
+
             const data = snapshot.val() as CallData;
             setCallStatus(data.status);
             const isCaller = data.callerId === currentUser.uid;
@@ -165,7 +167,12 @@ export default function VideoCallPage() {
             }
 
             // --- Signaling Logic ---
-            if (pc.signalingState === 'closed') return;
+            // Caller: Create offer
+            if (isCaller && !data.offer && pc.signalingState === 'stable') {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                await update(callDbRef, { offer });
+            }
             
             // Receiver: Set remote offer, create answer
             if (data.offer && pc.signalingState === 'stable') {
@@ -181,13 +188,6 @@ export default function VideoCallPage() {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
                 iceCandidateQueue.current.forEach(candidate => pc.addIceCandidate(candidate).catch(e => console.error("Error adding queued ICE candidate", e)));
                 iceCandidateQueue.current = [];
-            }
-            
-            // Caller: Create offer
-            if (isCaller && !data.offer && pc.signalingState === 'stable') {
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-                await update(callDbRef, { offer });
             }
             
             // Setup ICE listeners for the other user
@@ -215,7 +215,7 @@ export default function VideoCallPage() {
         if (callListener && callDbRef) off(callDbRef, 'value', callListener);
         iceListeners.forEach(({ ref, listener }) => off(ref, 'value', listener));
     }
-  }, [currentUser, callId]);
+  }, [currentUser, callId, otherUser]);
 
   const toggleMute = () => {
     setIsMuted(current => {
@@ -250,7 +250,20 @@ export default function VideoCallPage() {
       <div className="flex-1 flex flex-col">
         {isCallActive ? (
           <>
-            {/* Local Video (Top 50%) */}
+            {/* Remote Video (Top 50%) - Main view */}
+            <div className="w-full h-1/2 bg-black flex items-center justify-center relative">
+              <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
+               {!remoteVideoRef.current?.srcObject && otherUser && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white">
+                    <Avatar className="h-24 w-24">
+                        <AvatarImage src={otherUser?.photoURL} />
+                        <AvatarFallback>{otherUser?.displayName?.charAt(0)}</AvatarFallback>
+                    </Avatar>
+                    <p>Aguardando vídeo...</p>
+                  </div>
+                )}
+            </div>
+            {/* Local Video (Bottom 50%) */}
             <div className="w-full h-1/2 bg-gray-900 flex items-center justify-center relative">
               <video 
                 ref={localVideoRef} 
@@ -259,28 +272,13 @@ export default function VideoCallPage() {
                 muted 
                 className={cn("w-full h-full object-cover", isVideoOff && "hidden")}
               />
-               {isVideoOff && (
+               {isVideoOff && currentUser && (
                   <div className="flex flex-col items-center gap-2 text-white">
                     <Avatar className="h-24 w-24">
                         <AvatarImage src={currentUser?.photoURL || undefined} />
                         <AvatarFallback>{currentUser?.displayName?.charAt(0)}</AvatarFallback>
                     </Avatar>
                     <p>Câmera desligada</p>
-                  </div>
-                )}
-            </div>
-             {/* Remote Video (Bottom 50%) */}
-            <div className="w-full h-1/2 bg-black flex items-center justify-center relative">
-              <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
-               {!remoteVideoRef.current?.srcObject && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white">
-                    {otherUser && (
-                        <Avatar className="h-24 w-24">
-                            <AvatarImage src={otherUser?.photoURL} />
-                            <AvatarFallback>{otherUser?.displayName?.charAt(0)}</AvatarFallback>
-                        </Avatar>
-                    )}
-                    <p>Aguardando vídeo...</p>
                   </div>
                 )}
             </div>
