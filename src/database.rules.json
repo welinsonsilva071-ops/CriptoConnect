@@ -27,6 +27,12 @@
           }
         }
       }
+    },
+    "calls": {
+      "$callId": {
+        ".read": "root.child('calls').child($callId).child('caller').child('uid').val() === auth.uid || root.child('calls').child($callId).child('receiver').child('uid').val() === auth.uid",
+        ".write": "auth != null && (!data.exists() || data.child('caller').child('uid').val() === auth.uid || data.child('receiver').child('uid').val() === auth.uid)"
+      }
     }
   }
 }

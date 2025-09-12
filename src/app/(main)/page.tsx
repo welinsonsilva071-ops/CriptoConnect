@@ -9,7 +9,7 @@ import { ref, onValue, off, get } from 'firebase/database';
 import Link from 'next/link';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { UserPlus, MoreHorizontal } from 'lucide-react';
+import { UserPlus, MoreHorizontal, LogOut, Trash2, Settings } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -124,22 +124,22 @@ export default function HomePage() {
 
   const handleDeleteAccount = async () => {
     if (user) {
-      const confirmation = confirm("Are you sure you want to delete your account? This action is irreversible.");
+      const confirmation = confirm("Tem certeza de que deseja excluir sua conta? Esta ação é irreversível.");
       if (confirmation) {
         try {
           await ref(db, `users/${user.uid}`).remove();
           await deleteUser(user);
           toast({
-            title: "Account Deleted",
-            description: "Your account has been successfully deleted.",
+            title: "Conta Deletada",
+            description: "Sua conta foi excluída com sucesso.",
           });
           router.push('/signup');
         } catch (error) {
           console.error("Error deleting account:", error);
           toast({
             variant: "destructive",
-            title: "Error",
-            description: "Could not delete account. You may need to log in again to confirm.",
+            title: "Erro",
+            description: "Não foi possível excluir a conta. Você pode precisar fazer login novamente para confirmar.",
           });
         }
       }
@@ -148,21 +148,16 @@ export default function HomePage() {
 
 
   return (
-    <div className="relative min-h-full flex flex-col">
+    <div className="relative min-h-full flex flex-col bg-slate-50 dark:bg-slate-900">
       <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm p-4 border-b border-border flex justify-between items-center">
         <div className="flex items-center gap-4">
-            <Avatar className="h-10 w-10">
+            <Avatar className="h-10 w-10 border-2 border-primary/50">
               <AvatarImage src={dbUser?.photoURL || undefined} />
               <AvatarFallback>{(dbUser?.displayName || 'U').charAt(0)}</AvatarFallback>
             </Avatar>
             <h2 className="text-xl font-bold">Conversas</h2>
         </div>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href="/search-users">
-              <UserPlus className="h-5 w-5" />
-            </Link>
-          </Button>
+        <div className="flex items-center">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon">
@@ -172,11 +167,18 @@ export default function HomePage() {
             <DropdownMenuContent className="w-56" align="end">
               <DropdownMenuLabel>Minha Conta</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogout}>
-                Sair
+              <DropdownMenuItem>
+                <Settings className="mr-2 h-4 w-4" />
+                <span>Configurações</span>
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleLogout}>
+                <LogOut className="mr-2 h-4 w-4" />
+                <span>Sair</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleDeleteAccount} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
-                Excluir Conta
+                <Trash2 className="mr-2 h-4 w-4" />
+                <span>Excluir Conta</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -186,7 +188,7 @@ export default function HomePage() {
       <section className="flex-grow">
         {isLoadingChats && <p className="p-4 text-center text-muted-foreground">Carregando conversas...</p>}
         {!isLoadingChats && chats.length === 0 && (
-          <div className="p-8 text-center">
+          <div className="p-8 text-center flex flex-col items-center justify-center h-full">
             <p className="text-muted-foreground mb-4">Nenhuma conversa encontrada.</p>
              <Button asChild>
                 <Link href="/search-users">
@@ -196,24 +198,37 @@ export default function HomePage() {
               </Button>
           </div>
         )}
-        {!isLoadingChats && chats.map(chat => (
-          <Link href={`/messages/${chat.chatId}`} key={chat.chatId} className="flex items-center gap-3 p-4 hover:bg-muted/50 cursor-pointer border-b border-border">
-            <Avatar>
-              <AvatarImage src={chat.otherMember.photoURL} alt={chat.otherMember.displayName} />
-              <AvatarFallback>{chat.otherMember.displayName.charAt(0)}</AvatarFallback>
-            </Avatar>
-            <div className="flex-grow overflow-hidden">
-              <div className="flex justify-between">
-                <span className="font-semibold">{chat.otherMember.displayName}</span>
-                <span className="text-xs text-muted-foreground">
-                  {new Date(chat.timestamp).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}
-                </span>
-              </div>
-              <p className="text-sm text-muted-foreground truncate">{chat.lastMessage}</p>
-            </div>
-          </Link>
-        ))}
+        {!isLoadingChats && (
+          <div className="divide-y divide-border">
+            {chats.map(chat => (
+              <Link href={`/messages/${chat.chatId}`} key={chat.chatId} className="flex items-center gap-3 p-4 hover:bg-muted/50 cursor-pointer transition-colors duration-200">
+                <Avatar>
+                  <AvatarImage src={chat.otherMember.photoURL} alt={chat.otherMember.displayName} />
+                  <AvatarFallback>{chat.otherMember.displayName.charAt(0)}</AvatarFallback>
+                </Avatar>
+                <div className="flex-grow overflow-hidden">
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold truncate">{chat.otherMember.displayName}</span>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {new Date(chat.timestamp).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground truncate">{chat.lastMessage}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </section>
+
+      <div className="absolute bottom-20 right-4">
+        <Button asChild className="rounded-full shadow-lg h-14 w-14">
+            <Link href="/search-users">
+                <UserPlus className="h-6 w-6" />
+            </Link>
+        </Button>
+      </div>
+
     </div>
   );
 }
