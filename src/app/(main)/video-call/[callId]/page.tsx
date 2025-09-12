@@ -158,6 +158,11 @@ export default function VideoCallPage() {
             await pc.current.setLocalDescription(offerDescription);
             await update(callRef, { offer: { sdp: offerDescription.sdp, type: offerDescription.type }});
         }
+        
+        // Setting remote description for receiver
+        if (!isCaller && data.offer && pc.current?.signalingState === 'stable') {
+            await pc.current.setRemoteDescription(new RTCSessionDescription(data.offer));
+        }
 
         // Receiver creates answer
         if (!isCaller && data.offer && pc.current?.signalingState === 'have-remote-offer') {
@@ -165,13 +170,9 @@ export default function VideoCallPage() {
             await pc.current.setLocalDescription(answerDescription);
             await update(callRef, { answer: { sdp: answerDescription.sdp, type: answerDescription.type } });
         }
-        
-        // Setting remote description
-        if (data.offer && pc.current?.signalingState === 'stable') {
-            await pc.current.setRemoteDescription(new RTCSessionDescription(data.offer));
-        }
 
-        if (data.answer && pc.current?.signalingState === 'have-local-offer') {
+        // Setting remote description for caller
+        if (isCaller && data.answer && pc.current?.signalingState === 'have-local-offer') {
             await pc.current.setRemoteDescription(new RTCSessionDescription(data.answer));
             await update(callRef, { status: 'answered' });
         }
@@ -186,9 +187,9 @@ export default function VideoCallPage() {
             if (snapshot.exists()) {
                 snapshot.forEach(childSnapshot => {
                     const candidate = new RTCIceCandidate({ candidate: childSnapshot.key, sdpMid: 'video', sdpMLineIndex: 0 });
-                    pc.current?.addIceCandidate(candidate).catch(e => console.error("Error adding ICE candidate", e));
+                    pc.current?.addIceCandidate(candidate).catch(e => console.error("Error adding ICE candidate (video)", e));
                     const candidateAudio = new RTCIceCandidate({ candidate: childSnapshot.key, sdpMid: 'audio', sdpMLineIndex: 1 });
-                    pc.current?.addIceCandidate(candidateAudio).catch(e => console.error("Error adding ICE candidate", e));
+                    pc.current?.addIceCandidate(candidateAudio).catch(e => console.error("Error adding ICE candidate (audio)", e));
                 });
             }
         });
@@ -218,7 +219,7 @@ export default function VideoCallPage() {
   return (
     <div className="relative h-full bg-black text-white">
       <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
-      <video ref={localVideoRef} autoPlay playsInline muted className={cn("absolute bottom-6 right-6 w-1/4 max-w-xs rounded-lg shadow-lg border-2 border-slate-700 transition-opacity", isVideoOff ? 'opacity-0' : 'opacity-100')} />
+      <video ref={localVideoRef} autoPlay playsInline muted className={cn("absolute bottom-24 right-6 w-1/4 max-w-xs rounded-lg shadow-lg border-2 border-slate-700 transition-opacity", isVideoOff ? 'opacity-0' : 'opacity-100')} />
 
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-6 flex justify-center">
         <div className="flex items-center gap-4">
