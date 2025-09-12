@@ -123,7 +123,7 @@ export default function MainLayout({
   return (
     <div className="min-h-screen bg-background flex justify-center">
       <div className="w-full max-w-sm flex flex-col relative">
-        {incomingCall && <IncomingCall call={incomingCall} />}
+        {incomingCall && incomingCall.caller && <IncomingCall call={incomingCall} />}
 
         <main className={`flex-1 border-x border-border min-h-0 overflow-y-auto ${isMessagesPage || isCallPage ? 'grid' : ''}`}>
           {children}

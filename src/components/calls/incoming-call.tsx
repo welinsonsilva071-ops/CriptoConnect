@@ -59,6 +59,10 @@ export default function IncomingCall({ call }: { call: IncomingCallData }) {
     }
   };
 
+  if (!call.caller) {
+    return null; // Don't render if caller info is not yet available
+  }
+
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
       <Card className="w-full max-w-sm text-center animate-in fade-in-0 zoom-in-95">
