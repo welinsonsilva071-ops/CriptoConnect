@@ -45,48 +45,51 @@ export default function VideoCallPage() {
   const hasHungUp = useRef(false);
   const hangUpRef = useRef<() => Promise<void>>();
 
-  const hangUp = async () => {
+  const hangUp = useCallback(async () => {
     if (hasHungUp.current) return;
     hasHungUp.current = true;
 
-    if (pc.current) {
-        pc.current.getTransceivers().forEach(transceiver => {
-            if(transceiver.stop) {
-                transceiver.stop();
-            }
-        });
-        pc.current.close();
-        pc.current = null;
-    }
-    if (localStream.current) {
-        localStream.current.getTracks().forEach(track => track.stop());
-        localStream.current = null;
-    }
-
+    pc.current?.getTransceivers().forEach(transceiver => transceiver.stop());
+    pc.current?.close();
+    pc.current = null;
+    
+    localStream.current?.getTracks().forEach(track => track.stop());
+    localStream.current = null;
+    
     if (callId && currentUser) {
-      const callRef = ref(db, `calls/${callId}`);
-      const callSnap = await get(callRef);
-      if(callSnap.exists()){
-        const callData = callSnap.val() as CallData;
-        const updates: { [key: string]: any } = {};
-        updates[`/calls/${callId}/status`] = 'ended';
-
-        const otherUserId = callData?.caller.uid === currentUser.uid ? callData?.receiver.uid : callData?.caller.uid;
-        if(otherUserId) {
-            updates[`/users/${otherUserId}/incomingCall`] = null;
+        try {
+            const callRef = ref(db, `calls/${callId}`);
+            const callSnap = await get(callRef);
+            if(callSnap.exists()){
+              const callData = callSnap.val() as CallData;
+              if (callData.status !== 'ended' && callData.status !== 'declined') {
+                await update(callRef, { status: 'ended' });
+              }
+              const otherUserId = callData.caller.uid === currentUser.uid ? callData.receiver.uid : callData.caller.uid;
+              if(otherUserId) {
+                 const incomingCallRef = ref(db, `users/${otherUserId}/incomingCall`);
+                 const incomingCallSnap = await get(incomingCallRef);
+                 if (incomingCallSnap.exists() && incomingCallSnap.val().callId === callId) {
+                    await update(ref(db, `users/${otherUserId}`), { incomingCall: null });
+                 }
+              }
+            }
+        } catch (e) {
+            console.error("Hang up error:", e);
         }
-        await update(ref(db), updates);
-      }
     }
     
     toast({ title: "Chamada Encerrada" });
     router.push('/');
-  };
+  }, [callId, currentUser, router, toast]);
 
   hangUpRef.current = hangUp;
 
   useEffect(() => {
-    if (!currentUser || !callId) return;
+    if (!currentUser || !callId) {
+       router.push('/');
+       return;
+    };
 
     let callRefSub: Unsubscribe | undefined;
     let remoteIceCandidatesSub: Unsubscribe | undefined;
@@ -192,14 +195,24 @@ export default function VideoCallPage() {
     setupCall();
     
     return () => {
-       if (callRefSub) callRefSub();
-       if (remoteIceCandidatesSub) remoteIceCandidatesSub();
+       if (callRefSub) off(ref(db, `calls/${callId}`), 'value', callRefSub);
+       if (remoteIceCandidatesSub) {
+         get(ref(db, `calls/${callId}`)).then(snap => {
+            if (snap.exists()) {
+                const callData = snap.val() as CallData;
+                const otherUserId = callData.caller.uid === currentUser.uid ? callData.receiver.uid : callData.caller.uid;
+                if(otherUserId) {
+                    off(ref(db, `calls/${callId}/iceCandidates/${otherUserId}`), 'value', remoteIceCandidatesSub);
+                }
+            }
+         });
+       }
        if (disconnectRef) disconnectRef.cancel();
        if(hangUpRef.current && !hasHungUp.current) {
          hangUpRef.current();
        }
     }
-  }, [currentUser, callId, otherUser, toast]);
+  }, [currentUser, callId, router, toast]);
 
 
   const toggleMute = () => {
