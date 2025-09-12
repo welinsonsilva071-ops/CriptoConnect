@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from '@/lib/firebase';
-import { ref, onValue, off, update, remove, onDisconnect, get } from 'firebase/database';
+import { ref, onValue, off, update, remove, onDisconnect, get, push } from 'firebase/database';
 import { Button } from '@/components/ui/button';
 import { PhoneOff, Mic, MicOff, Video, VideoOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -34,7 +34,7 @@ export default function VideoCallPage() {
 
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
-  const [otherUser, setOtherUser] = useState<{displayName: string, photoURL?: string} | null>(null);
+  const [otherUser, setOtherUser] = useState<{uid: string, displayName: string, photoURL?: string} | null>(null);
 
   const pc = useRef<RTCPeerConnection | null>(null);
   const localStream = useRef<MediaStream | null>(null);
@@ -63,10 +63,9 @@ export default function VideoCallPage() {
       const callSnap = await get(callRef);
       if(callSnap.exists()){
         const callData = callSnap.val() as CallData;
-        const otherUserId = callData?.caller.uid === currentUser.uid ? callData?.receiver.uid : callData?.caller.uid;
-        
         await update(callRef, { status: 'ended' });
-        
+
+        const otherUserId = callData?.caller.uid === currentUser.uid ? callData?.receiver.uid : callData?.caller.uid;
         if(otherUserId) {
             await remove(ref(db, `users/${otherUserId}/incomingCall`));
         }
@@ -77,12 +76,14 @@ export default function VideoCallPage() {
     router.push('/');
   }, [callId, currentUser, router, toast]);
 
-
-  // Initialize Peer Connection and Media Streams
   useEffect(() => {
-    const initialize = async () => {
-        if (!currentUser || !callId) return;
+    if (!currentUser || !callId) return;
 
+    let callRef: any;
+    let callListener: any;
+    let iceCandidatesListener: any;
+
+    const setup = async () => {
         pc.current = new RTCPeerConnection(servers);
 
         try {
@@ -111,96 +112,80 @@ export default function VideoCallPage() {
             });
         };
         
-        const callRef = ref(db, `calls/${callId}`);
-        onDisconnect(callRef).update({ status: 'ended' }).catch(() => {});
-    };
+        callRef = ref(db, `calls/${callId}`);
+        const onDisconnectRef = onDisconnect(callRef);
+        onDisconnectRef.update({ status: 'ended' });
 
-    initialize();
-    
-    return () => {
-       if (pc.current) {
-           pc.current.close();
-       }
-       if (localStream.current) {
-           localStream.current.getTracks().forEach(track => track.stop());
-       }
-    }
-  }, [currentUser, callId, toast, hangUp]);
-
-
-  // Signaling logic
-  useEffect(() => {
-    if (!currentUser || !callId || !pc.current) return;
-
-    const callRef = ref(db, `calls/${callId}`);
-    
-    const unsubscribe = onValue(callRef, async (snapshot) => {
-        if (!snapshot.exists()) {
-            if(!hasHungUp.current) await hangUp();
-            return;
-        }
-        
-        const data: CallData = snapshot.val();
-        const isCaller = data.caller.uid === currentUser.uid;
-        setOtherUser(isCaller ? data.receiver : data.caller);
-
-        if (data.status === 'ended' || data.status === 'declined') {
-            if(!hasHungUp.current) await hangUp();
-            return;
-        }
-
-        const peerConnection = pc.current!;
-
-        // Caller sets up the offer
-        if (isCaller && !data.offer && peerConnection.signalingState === 'stable') {
-            const offerDescription = await peerConnection.createOffer();
-            await peerConnection.setLocalDescription(offerDescription);
-            await update(callRef, { offer: { sdp: offerDescription.sdp, type: offerDescription.type }});
-        }
-        
-        // Receiver sets remote and creates answer
-        if (!isCaller && data.offer && peerConnection.signalingState === 'stable') {
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-            const answerDescription = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answerDescription);
-            await update(callRef, { answer: { sdp: answerDescription.sdp, type: answerDescription.type }, status: 'answered' });
-        }
-
-        // Caller sets remote answer
-        if (isCaller && data.answer && peerConnection.signalingState === 'have-local-offer') {
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-        }
-    });
-
-    // ICE candidates logic
-    const otherUserId = otherUser?.uid;
-    let iceUnsubscribe: () => void;
-
-    if (otherUserId) {
-        const localIceRef = ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`);
-        pc.current.onicecandidate = (event) => {
-            if (event.candidate) {
-                update(localIceRef, { [event.candidate.candidate]: true });
+        callListener = onValue(callRef, async (snapshot) => {
+            if (!snapshot.exists()) {
+                await hangUp();
+                return;
             }
-        };
+            
+            const data: CallData = snapshot.val();
+            const isCaller = data.caller.uid === currentUser.uid;
+            
+            const otherUserData = isCaller ? data.receiver : data.caller;
+            if(!otherUser) setOtherUser(otherUserData);
 
-        const remoteIceRef = ref(db, `calls/${callId}/iceCandidates/${otherUserId}`);
-        iceUnsubscribe = onValue(remoteIceRef, (snapshot) => {
-            if (snapshot.exists()) {
-                snapshot.forEach(childSnapshot => {
-                    const candidate = new RTCIceCandidate(JSON.parse(childSnapshot.key));
-                    pc.current?.addIceCandidate(candidate).catch(e => console.error("Error adding ICE candidate", e));
-                });
+            if (data.status === 'ended' || data.status === 'declined') {
+                await hangUp();
+                return;
+            }
+
+            const peerConnection = pc.current!;
+
+            if (isCaller && !data.offer) {
+                const offerDescription = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offerDescription);
+                await update(callRef, { offer: { sdp: offerDescription.sdp, type: offerDescription.type }});
+            }
+            
+            if (!isCaller && data.offer && peerConnection.signalingState === 'stable') {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+                const answerDescription = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answerDescription);
+                await update(callRef, { answer: { sdp: answerDescription.sdp, type: answerDescription.type }, status: 'answered' });
+            }
+
+            if (isCaller && data.answer && peerConnection.signalingState === 'have-local-offer') {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
             }
         });
-    }
 
+        // ICE candidates logic
+        const otherUserId = otherUser?.uid || (await get(callRef)).val()?.receiver.uid;
+        if(otherUserId) {
+            const iceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`);
+            pc.current.onicecandidate = (event) => {
+                if (event.candidate) {
+                    push(iceCandidatesRef, event.candidate.toJSON());
+                }
+            };
+            
+            const remoteIceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${otherUserId}`);
+            iceCandidatesListener = onValue(remoteIceCandidatesRef, (snapshot) => {
+                if (snapshot.exists()) {
+                    snapshot.forEach(childSnapshot => {
+                        const candidate = new RTCIceCandidate(childSnapshot.val());
+                        pc.current?.addIceCandidate(candidate).catch(e => console.error("Error adding ICE candidate", e));
+                    });
+                }
+            });
+        }
+    };
 
+    setup();
+    
     return () => {
-        unsubscribe();
-        iceUnsubscribe?.();
+       if (callRef) off(callRef, 'value', callListener);
+       if (iceCandidatesListener) off(ref(db, `calls/${callId}/iceCandidates`), 'value', iceCandidatesListener);
+       if(hasHungUp.current) {
+           const onDisconnectRef = onDisconnect(ref(db, `calls/${callId}`));
+           onDisconnectRef.cancel();
+       }
     }
-  }, [currentUser, callId, hangUp, otherUser?.uid]);
+  }, [currentUser, callId, hangUp, otherUser]);
 
 
   const toggleMute = () => {
