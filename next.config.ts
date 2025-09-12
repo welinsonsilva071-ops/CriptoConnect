@@ -24,13 +24,11 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  experimental: {
-    // This is to allow cross-origin requests in development environments.
-    // The web container that powers Firebase Studio runs on a different domain.
-    allowedDevOrigins: [
-      '*.cluster-lr6dwlc2lzbcctqhqorax5zmro.cloudworkstations.dev',
-    ],
-  },
+  // This is to allow cross-origin requests in development environments.
+  // The web container that powers Firebase Studio runs on a different domain.
+  allowedDevOrigins: [
+    '*.cluster-lr6dwlc2lzbcctqhqorax5zmro.cloudworkstations.dev',
+  ],
 };
 
 export default nextConfig;
