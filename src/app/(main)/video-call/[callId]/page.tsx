@@ -114,14 +114,14 @@ export default function VideoCallPage() {
         }
 
         const remoteStream = new MediaStream();
-        if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = remoteStream;
-        }
-
+        
         pc.current.ontrack = (event) => {
             event.streams[0].getTracks().forEach(track => {
                 remoteStream.addTrack(track);
             });
+            if (remoteVideoRef.current) {
+                remoteVideoRef.current.srcObject = remoteStream;
+            }
         };
         
         const callRef = ref(db, `calls/${callId}`);
@@ -130,7 +130,7 @@ export default function VideoCallPage() {
 
         callRefSub = onValue(callRef, async (snapshot) => {
             if (!snapshot.exists()) {
-                if(hangUpRef.current) await hangUpRef.current();
+                if(hangUpRef.current && !hasHungUp.current) await hangUpRef.current();
                 return;
             }
             
@@ -143,7 +143,7 @@ export default function VideoCallPage() {
             }
 
             if (data.status === 'ended' || data.status === 'declined') {
-                if(hangUpRef.current) await hangUpRef.current();
+                if(hangUpRef.current && !hasHungUp.current) await hangUpRef.current();
                 return;
             }
 

@@ -115,15 +115,14 @@ export default function VoiceCallPage() {
         }
 
         const remoteStream = new MediaStream();
-        if (remoteAudioRef.current) {
-            remoteAudioRef.current.srcObject = remoteStream;
-            remoteAudioRef.current.play().catch(e => console.error("Remote audio play failed", e));
-        }
-
+        
         pc.current.ontrack = (event) => {
             event.streams[0].getTracks().forEach(track => {
                 remoteStream.addTrack(track);
             });
+            if (remoteAudioRef.current) {
+                remoteAudioRef.current.srcObject = remoteStream;
+            }
         };
         
         const callRef = ref(db, `calls/${callId}`);
@@ -132,7 +131,7 @@ export default function VoiceCallPage() {
 
         callRefSub = onValue(callRef, async (snapshot) => {
             if (!snapshot.exists()) {
-                if (hangUpRef.current) await hangUpRef.current();
+                if (hangUpRef.current && !hasHungUp.current) await hangUpRef.current();
                 return;
             }
             
@@ -147,7 +146,7 @@ export default function VoiceCallPage() {
             }
 
             if (data.status === 'ended' || data.status === 'declined') {
-                if (hangUpRef.current) await hangUpRef.current();
+                if (hangUpRef.current && !hasHungUp.current) await hangUpRef.current();
                 return;
             }
             
@@ -203,7 +202,7 @@ export default function VoiceCallPage() {
     return () => {
        if (callRefSub) off(ref(db, `calls/${callId}`), 'value', callRefSub);
        if (remoteIceCandidatesSub) {
-         const callDataSnap = get(ref(db, `calls/${callId}`)).then(snap => {
+         get(ref(db, `calls/${callId}`)).then(snap => {
             if (snap.exists()) {
                 const callData = snap.val() as CallData;
                 const otherUserId = callData.caller.uid === currentUser.uid ? callData.receiver.uid : callData.caller.uid;
@@ -248,7 +247,14 @@ export default function VoiceCallPage() {
   };
 
   if (!otherUser) {
-    return <div className="flex items-center justify-center h-screen bg-slate-900 text-white">Carregando chamada...</div>;
+    return (
+        <div className="flex flex-col h-screen bg-slate-900 text-white">
+            <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4 pt-16">
+                Carregando chamada...
+            </div>
+             <audio ref={remoteAudioRef} autoPlay playsInline />
+        </div>
+    );
   }
 
   return (
