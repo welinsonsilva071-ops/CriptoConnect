@@ -145,13 +145,13 @@ export default function ChatPage() {
             callId,
             caller: {
               uid: currentUser.uid,
-              displayName: currentUser.displayName,
-              photoURL: currentUser.photoURL,
+              displayName: currentUser.displayName || '',
+              photoURL: currentUser.photoURL || '',
             },
             receiver: {
               uid: otherUser.uid,
-              displayName: otherUser.displayName,
-              photoURL: otherUser.photoURL,
+              displayName: otherUser.displayName || '',
+              photoURL: otherUser.photoURL || '',
             },
             type,
             status: 'ringing',
@@ -164,8 +164,8 @@ export default function ChatPage() {
             callId,
             caller: {
                 uid: currentUser.uid,
-                displayName: currentUser.displayName,
-                photoURL: currentUser.photoURL,
+                displayName: currentUser.displayName || '',
+                photoURL: currentUser.photoURL || '',
             },
             type,
         };
@@ -204,7 +204,7 @@ export default function ChatPage() {
           {otherUser && (
             <>
               <Avatar>
-                <AvatarImage src={otherUser.photoURL} alt={otherUser.displayName} />
+                <AvatarImage src={otherUser.photoURL || undefined} alt={otherUser.displayName} />
                 <AvatarFallback>{otherUser.displayName.charAt(0)}</AvatarFallback>
               </Avatar>
               <h2 className="text-lg font-bold">{otherUser.displayName}</h2>

@@ -31,9 +31,12 @@ export default function IncomingCall({ call }: { call: IncomingCallData }) {
     if (!currentUser) return;
     
     try {
+      // First remove the incoming call marker
+      await remove(ref(db, `users/${currentUser.uid}/incomingCall`));
+
+      // Then update the call status
       const callRef = ref(db, `calls/${call.callId}`);
       await update(callRef, { status: 'answered' });
-      await remove(ref(db, `users/${currentUser.uid}/incomingCall`));
 
       if (call.type === 'voice') {
         router.push(`/call/${call.callId}`);
@@ -50,9 +53,12 @@ export default function IncomingCall({ call }: { call: IncomingCallData }) {
     if (!currentUser) return;
 
     try {
+      // First remove the incoming call marker
+      await remove(ref(db, `users/${currentUser.uid}/incomingCall`));
+      
+      // Then update the call status
       const callRef = ref(db, `calls/${call.callId}`);
       await update(callRef, { status: 'declined' });
-      await remove(ref(db, `users/${currentUser.uid}/incomingCall`));
     } catch (error) {
        console.error("Error declining call: ", error);
        toast({ variant: 'destructive', title: 'Erro', description: 'Não foi possível recusar a chamada.'})
@@ -68,7 +74,7 @@ export default function IncomingCall({ call }: { call: IncomingCallData }) {
       <Card className="w-full max-w-sm text-center animate-in fade-in-0 zoom-in-95">
         <CardHeader>
           <Avatar className="h-24 w-24 mx-auto mb-4 border-4 border-primary">
-            <AvatarImage src={call.caller.photoURL} alt={call.caller.displayName} />
+            <AvatarImage src={call.caller.photoURL || undefined} alt={call.caller.displayName} />
             <AvatarFallback className="text-4xl">{call.caller.displayName.charAt(0)}</AvatarFallback>
           </Avatar>
           <CardTitle>{call.caller.displayName}</CardTitle>
