@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from '@/lib/firebase';
-import { ref, onValue, off, update, remove, onDisconnect, get, push, Unsubscribe } from 'firebase/database';
+import { ref, onValue, off, update, get, push, Unsubscribe, onDisconnect } from 'firebase/database';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { PhoneOff, Mic, MicOff } from 'lucide-react';
@@ -48,7 +48,9 @@ export default function VoiceCallPage() {
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const hasHungUp = useRef(false);
 
-  const hangUp = useCallback(async () => {
+  const hangUpRef = useRef<() => Promise<void>>();
+
+  const hangUp = async () => {
     if (hasHungUp.current) return;
     hasHungUp.current = true;
 
@@ -84,13 +86,14 @@ export default function VoiceCallPage() {
 
     toast({ title: "Chamada Encerrada" });
     router.push('/');
-  }, [callId, currentUser, router, toast]);
+  };
+
+  hangUpRef.current = hangUp;
 
   useEffect(() => {
     if (!currentUser || !callId) return;
 
     let callRefSub: Unsubscribe | undefined;
-    let localIceCandidatesSub: Unsubscribe | undefined;
     let remoteIceCandidatesSub: Unsubscribe | undefined;
     let disconnectRef: any;
 
@@ -105,7 +108,7 @@ export default function VoiceCallPage() {
         } catch (error) {
             console.error("Error getting user media", error);
             toast({ variant: 'destructive', title: 'Erro de áudio', description: 'Não foi possível acessar o microfone.' });
-            await hangUp();
+            if (hangUpRef.current) await hangUpRef.current();
             return;
         }
 
@@ -127,7 +130,7 @@ export default function VoiceCallPage() {
 
         callRefSub = onValue(callRef, async (snapshot) => {
             if (!snapshot.exists()) {
-                await hangUp();
+                if (hangUpRef.current) await hangUpRef.current();
                 return;
             }
             
@@ -142,7 +145,7 @@ export default function VoiceCallPage() {
             }
 
             if (data.status === 'ended' || data.status === 'declined') {
-                await hangUp();
+                if (hangUpRef.current) await hangUpRef.current();
                 return;
             }
             
@@ -170,8 +173,9 @@ export default function VoiceCallPage() {
         const callDataSnap = await get(callRef);
         if (!callDataSnap.exists()) return;
         const callData = callDataSnap.val() as CallData;
-
+        
         const otherUserId = callData.caller.uid === currentUser.uid ? callData.receiver.uid : callData.caller.uid;
+        if (!otherUserId) return;
 
         const localIceRef = ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`);
         const remoteIceRef = ref(db, `calls/${callId}/iceCandidates/${otherUserId}`);
@@ -179,6 +183,7 @@ export default function VoiceCallPage() {
         pc.current.onicecandidate = (event) => {
             if (event.candidate) {
                 push(localIceRef, event.candidate.toJSON());
+
             }
         };
         
@@ -196,14 +201,13 @@ export default function VoiceCallPage() {
     
     return () => {
        if (callRefSub) callRefSub();
-       if (localIceCandidatesSub) localIceCandidatesSub();
        if (remoteIceCandidatesSub) remoteIceCandidatesSub();
        if (disconnectRef) disconnectRef.cancel();
-       if (!hasHungUp.current) {
-          hangUp();
+       if (hangUpRef.current && !hasHungUp.current) {
+          hangUpRef.current();
        }
     }
-  }, [currentUser, callId, hangUp, otherUser, toast]);
+  }, [currentUser, callId, otherUser, toast]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -262,4 +266,3 @@ export default function VoiceCallPage() {
     </div>
   );
 }
-

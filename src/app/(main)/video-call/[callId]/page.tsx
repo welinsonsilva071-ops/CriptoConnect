@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from '@/lib/firebase';
-import { ref, onValue, off, update, remove, onDisconnect, get, push, Unsubscribe } from 'firebase/database';
+import { ref, onValue, off, update, get, push, Unsubscribe, onDisconnect } from 'firebase/database';
 import { Button } from '@/components/ui/button';
 import { PhoneOff, Mic, MicOff, Video, VideoOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -43,8 +43,9 @@ export default function VideoCallPage() {
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   
   const hasHungUp = useRef(false);
+  const hangUpRef = useRef<() => Promise<void>>();
 
-  const hangUp = useCallback(async () => {
+  const hangUp = async () => {
     if (hasHungUp.current) return;
     hasHungUp.current = true;
 
@@ -80,7 +81,9 @@ export default function VideoCallPage() {
     
     toast({ title: "Chamada Encerrada" });
     router.push('/');
-  }, [callId, currentUser, router, toast]);
+  };
+
+  hangUpRef.current = hangUp;
 
   useEffect(() => {
     if (!currentUser || !callId) return;
@@ -103,7 +106,7 @@ export default function VideoCallPage() {
         } catch (error) {
             console.error("Error getting user media", error);
             toast({ variant: 'destructive', title: 'Erro de Mídia', description: 'Não foi possível acessar a câmera ou microfone.' });
-            await hangUp();
+            if(hangUpRef.current) await hangUpRef.current();
             return;
         }
 
@@ -124,7 +127,7 @@ export default function VideoCallPage() {
 
         callRefSub = onValue(callRef, async (snapshot) => {
             if (!snapshot.exists()) {
-                await hangUp();
+                if(hangUpRef.current) await hangUpRef.current();
                 return;
             }
             
@@ -137,7 +140,7 @@ export default function VideoCallPage() {
             }
 
             if (data.status === 'ended' || data.status === 'declined') {
-                await hangUp();
+                if(hangUpRef.current) await hangUpRef.current();
                 return;
             }
 
@@ -166,6 +169,7 @@ export default function VideoCallPage() {
         if (!callDataSnap.exists()) return;
         const callData = callDataSnap.val() as CallData;
         const otherUserId = callData.caller.uid === currentUser.uid ? callData.receiver.uid : callData.caller.uid;
+        if (!otherUserId) return;
 
         const localIceRef = ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`);
         pc.current.onicecandidate = (event) => {
@@ -191,11 +195,11 @@ export default function VideoCallPage() {
        if (callRefSub) callRefSub();
        if (remoteIceCandidatesSub) remoteIceCandidatesSub();
        if (disconnectRef) disconnectRef.cancel();
-       if(!hasHungUp.current) {
-         hangUp();
+       if(hangUpRef.current && !hasHungUp.current) {
+         hangUpRef.current();
        }
     }
-  }, [currentUser, callId, hangUp, otherUser, toast]);
+  }, [currentUser, callId, otherUser, toast]);
 
 
   const toggleMute = () => {
