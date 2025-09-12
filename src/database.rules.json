@@ -27,18 +27,6 @@
           }
         }
       }
-    },
-    "calls": {
-      "$callId": {
-        ".read": "auth != null && (data.child('callerId').val() === auth.uid || data.child('receiverId').val() === auth.uid)",
-        ".write": "auth != null && ((!data.exists() && newData.child('callerId').val() === auth.uid) || (data.exists() && (data.child('callerId').val() === auth.uid || data.child('receiverId').val() === auth.uid)))",
-        "iceCandidates": {
-          "$uid": {
-            ".read": "auth.uid === $uid || root.child('calls').child($callId).child('callerId').val() === auth.uid || root.child('calls').child($callId).child('receiverId').val() === auth.uid",
-            ".write": "auth.uid === $uid"
-          }
-        }
-      }
     }
   }
 }
