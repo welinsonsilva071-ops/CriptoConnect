@@ -124,6 +124,18 @@ export default function ChatPage() {
 
   const handleStartCall = async (type: 'voice' | 'video') => {
     if (!currentUser || !otherUser) return;
+
+    // Verification before starting the call
+    const otherUserRef = ref(db, `users/${otherUser.uid}`);
+    const otherUserSnap = await get(otherUserRef);
+    if (!otherUserSnap.exists() || !otherUserSnap.val().displayName) {
+        toast({
+            variant: "destructive",
+            title: "Não é possível iniciar a chamada",
+            description: "O usuário ainda não completou o perfil."
+        });
+        return;
+    }
     
     try {
         const callId = push(ref(db, 'calls')).key;
