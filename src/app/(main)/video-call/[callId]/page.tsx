@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from '@/lib/firebase';
-import { ref, onValue, off, update, remove, onDisconnect, get, push } from 'firebase/database';
+import { ref, onValue, off, update, remove, onDisconnect, get, push, Unsubscribe } from 'firebase/database';
 import { Button } from '@/components/ui/button';
 import { PhoneOff, Mic, MicOff, Video, VideoOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -49,7 +49,11 @@ export default function VideoCallPage() {
     hasHungUp.current = true;
 
     if (pc.current) {
-        pc.current.getTransceivers().forEach(transceiver => transceiver.stop());
+        pc.current.getTransceivers().forEach(transceiver => {
+            if(transceiver.stop) {
+                transceiver.stop();
+            }
+        });
         pc.current.close();
         pc.current = null;
     }
@@ -63,12 +67,14 @@ export default function VideoCallPage() {
       const callSnap = await get(callRef);
       if(callSnap.exists()){
         const callData = callSnap.val() as CallData;
-        await update(callRef, { status: 'ended' });
+        const updates: { [key: string]: any } = {};
+        updates[`/calls/${callId}/status`] = 'ended';
 
         const otherUserId = callData?.caller.uid === currentUser.uid ? callData?.receiver.uid : callData?.caller.uid;
         if(otherUserId) {
-            await remove(ref(db, `users/${otherUserId}/incomingCall`));
+            updates[`/users/${otherUserId}/incomingCall`] = null;
         }
+        await update(ref(db), updates);
       }
     }
     
@@ -79,11 +85,11 @@ export default function VideoCallPage() {
   useEffect(() => {
     if (!currentUser || !callId) return;
 
-    let callRef: any;
-    let callListener: any;
-    let iceCandidatesListener: any;
+    let callRefSub: Unsubscribe | undefined;
+    let remoteIceCandidatesSub: Unsubscribe | undefined;
+    let disconnectRef: any;
 
-    const setup = async () => {
+    const setupCall = async () => {
         pc.current = new RTCPeerConnection(servers);
 
         try {
@@ -112,11 +118,11 @@ export default function VideoCallPage() {
             });
         };
         
-        callRef = ref(db, `calls/${callId}`);
-        const onDisconnectRef = onDisconnect(callRef);
-        onDisconnectRef.update({ status: 'ended' });
+        const callRef = ref(db, `calls/${callId}`);
+        disconnectRef = onDisconnect(callRef);
+        disconnectRef.update({ status: 'ended' });
 
-        callListener = onValue(callRef, async (snapshot) => {
+        callRefSub = onValue(callRef, async (snapshot) => {
             if (!snapshot.exists()) {
                 await hangUp();
                 return;
@@ -125,8 +131,10 @@ export default function VideoCallPage() {
             const data: CallData = snapshot.val();
             const isCaller = data.caller.uid === currentUser.uid;
             
-            const otherUserData = isCaller ? data.receiver : data.caller;
-            if(!otherUser) setOtherUser(otherUserData);
+            if(!otherUser) {
+                const otherUserData = isCaller ? data.receiver : data.caller;
+                setOtherUser(otherUserData);
+            }
 
             if (data.status === 'ended' || data.status === 'declined') {
                 await hangUp();
@@ -154,38 +162,40 @@ export default function VideoCallPage() {
         });
 
         // ICE candidates logic
-        const otherUserId = otherUser?.uid || (await get(callRef)).val()?.receiver.uid;
-        if(otherUserId) {
-            const iceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`);
-            pc.current.onicecandidate = (event) => {
-                if (event.candidate) {
-                    push(iceCandidatesRef, event.candidate.toJSON());
-                }
-            };
-            
-            const remoteIceCandidatesRef = ref(db, `calls/${callId}/iceCandidates/${otherUserId}`);
-            iceCandidatesListener = onValue(remoteIceCandidatesRef, (snapshot) => {
-                if (snapshot.exists()) {
-                    snapshot.forEach(childSnapshot => {
-                        const candidate = new RTCIceCandidate(childSnapshot.val());
-                        pc.current?.addIceCandidate(candidate).catch(e => console.error("Error adding ICE candidate", e));
-                    });
-                }
-            });
-        }
+        const callDataSnap = await get(callRef);
+        if (!callDataSnap.exists()) return;
+        const callData = callDataSnap.val() as CallData;
+        const otherUserId = callData.caller.uid === currentUser.uid ? callData.receiver.uid : callData.caller.uid;
+
+        const localIceRef = ref(db, `calls/${callId}/iceCandidates/${currentUser.uid}`);
+        pc.current.onicecandidate = (event) => {
+            if (event.candidate) {
+                push(localIceRef, event.candidate.toJSON());
+            }
+        };
+        
+        const remoteIceRef = ref(db, `calls/${callId}/iceCandidates/${otherUserId}`);
+        remoteIceCandidatesSub = onValue(remoteIceRef, (snapshot) => {
+            if (snapshot.exists()) {
+                snapshot.forEach(childSnapshot => {
+                    const candidate = new RTCIceCandidate(childSnapshot.val());
+                    pc.current?.addIceCandidate(candidate).catch(e => console.error("Error adding ICE candidate", e));
+                });
+            }
+        });
     };
 
-    setup();
+    setupCall();
     
     return () => {
-       if (callRef) off(callRef, 'value', callListener);
-       if (iceCandidatesListener) off(ref(db, `calls/${callId}/iceCandidates`), 'value', iceCandidatesListener);
-       if(hasHungUp.current) {
-           const onDisconnectRef = onDisconnect(ref(db, `calls/${callId}`));
-           onDisconnectRef.cancel();
+       if (callRefSub) callRefSub();
+       if (remoteIceCandidatesSub) remoteIceCandidatesSub();
+       if (disconnectRef) disconnectRef.cancel();
+       if(!hasHungUp.current) {
+         hangUp();
        }
     }
-  }, [currentUser, callId, hangUp, otherUser]);
+  }, [currentUser, callId, hangUp, otherUser, toast]);
 
 
   const toggleMute = () => {
