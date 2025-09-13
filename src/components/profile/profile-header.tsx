@@ -1,8 +1,11 @@
+
 import type { User } from '@/lib/data';
 import Image from 'next/image';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { CalendarDays, Link as LinkIcon, MapPin } from 'lucide-react';
+import ProfilePhotoDialog from './profile-photo-dialog';
+
 
 export default function ProfileHeader({ user }: { user: User }) {
   return (
@@ -19,10 +22,12 @@ export default function ProfileHeader({ user }: { user: User }) {
       <div className="p-4">
         <div className="flex justify-between items-start">
           <div className="-mt-20">
-            <Avatar className="h-32 w-32 border-4 border-background bg-background">
-              <AvatarImage src={user.avatar} alt={user.name} />
-              <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
-            </Avatar>
+            <ProfilePhotoDialog name={user.name} photoURL={user.avatar}>
+              <Avatar className="h-32 w-32 border-4 border-background bg-background cursor-pointer">
+                <AvatarImage src={user.avatar} alt={user.name} />
+                <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
+              </Avatar>
+            </ProfilePhotoDialog>
           </div>
           <Button className="rounded-full font-semibold">Follow</Button>
         </div>

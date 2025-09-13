@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from '@/hooks/use-toast';
 import { signOut, deleteUser } from 'firebase/auth';
+import ProfilePhotoDialog from '@/components/profile/profile-photo-dialog';
 
 type DbUser = {
   id: string;
@@ -151,11 +152,16 @@ export default function HomePage() {
     <div className="relative min-h-full flex flex-col bg-slate-50 dark:bg-slate-900">
       <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm p-4 border-b border-border flex justify-between items-center">
         <div className="flex items-center gap-4">
-            <Avatar className="h-10 w-10 border-2 border-primary/50">
-              <AvatarImage src={dbUser?.photoURL || undefined} />
-              <AvatarFallback>{(dbUser?.displayName || 'U').charAt(0)}</AvatarFallback>
-            </Avatar>
-            <h2 className="text-xl font-bold">Conversas</h2>
+          <ProfilePhotoDialog
+              name={dbUser?.displayName || ''}
+              photoURL={dbUser?.photoURL || undefined}
+          >
+              <Avatar className="h-10 w-10 border-2 border-primary/50 cursor-pointer">
+                <AvatarImage src={dbUser?.photoURL || undefined} />
+                <AvatarFallback>{(dbUser?.displayName || 'U').charAt(0)}</AvatarFallback>
+              </Avatar>
+          </ProfilePhotoDialog>
+          <h2 className="text-xl font-bold">Conversas</h2>
         </div>
         <div className="flex items-center">
           <DropdownMenu>
@@ -203,12 +209,17 @@ export default function HomePage() {
         {!isLoadingChats && (
           <div className="divide-y divide-border">
             {chats.map(chat => (
-              <Link href={`/messages/${chat.chatId}`} key={chat.chatId} className="flex items-center gap-3 p-4 hover:bg-muted/50 cursor-pointer transition-colors duration-200">
-                <Avatar>
-                  <AvatarImage src={chat.otherMember.photoURL} alt={chat.otherMember.displayName} />
-                  <AvatarFallback>{chat.otherMember.displayName.charAt(0)}</AvatarFallback>
-                </Avatar>
-                <div className="flex-grow overflow-hidden">
+              <div key={chat.chatId} className="flex items-center gap-3 p-4 hover:bg-muted/50 transition-colors duration-200">
+                 <ProfilePhotoDialog
+                    name={chat.otherMember.displayName}
+                    photoURL={chat.otherMember.photoURL}
+                  >
+                    <Avatar className="cursor-pointer">
+                      <AvatarImage src={chat.otherMember.photoURL} alt={chat.otherMember.displayName} />
+                      <AvatarFallback>{chat.otherMember.displayName.charAt(0)}</AvatarFallback>
+                    </Avatar>
+                  </ProfilePhotoDialog>
+                <Link href={`/messages/${chat.chatId}`} className="flex-grow overflow-hidden">
                   <div className="flex justify-between items-center">
                     <span className="font-semibold truncate">{chat.otherMember.displayName}</span>
                     <span className="text-xs text-muted-foreground shrink-0">
@@ -216,8 +227,8 @@ export default function HomePage() {
                     </span>
                   </div>
                   <p className="text-sm text-muted-foreground truncate">{chat.lastMessage}</p>
-                </div>
-              </Link>
+                </Link>
+              </div>
             ))}
           </div>
         )}
