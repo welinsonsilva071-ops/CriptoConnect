@@ -51,7 +51,6 @@ export default function ChatPage() {
   const isSelectionMode = selectedMessages.length > 0;
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
   const isInitialLoad = useRef(true);
 
 
@@ -94,13 +93,6 @@ export default function ChatPage() {
             ...messagesData[key]
           })).sort((a,b) => a.timestamp - b.timestamp)
         : [];
-
-      if (!isInitialLoad.current && messagesList.length > allMessages.length) {
-        const lastMessage = messagesList[messagesList.length - 1];
-        if (lastMessage.author !== currentUser.uid) {
-           audioRef.current?.play().catch(e => console.error("Error playing sound:", e));
-        }
-      }
       
       setAllMessages(messagesList);
       
@@ -328,7 +320,6 @@ export default function ChatPage() {
           </Button>
         </form>
       </footer>
-      <audio ref={audioRef} src="/sounds/notification.mp3" preload="auto"></audio>
     </div>
   );
 }
