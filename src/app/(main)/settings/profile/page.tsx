@@ -37,7 +37,7 @@ export default function EditProfilePage() {
   
   const [displayName, setDisplayName] = useState('');
   const [phone, setPhone] = useState('');
-  const [photo, setPhoto] = useState<File | null>(null);
+  const [newPhotoDataUri, setNewPhotoDataUri] = useState<string | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -71,11 +71,12 @@ export default function EditProfilePage() {
     return () => unsubscribe();
   }, [router]);
 
-  const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoChange = async (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      setPhoto(file);
-      setPhotoPreview(URL.createObjectURL(file));
+      const dataUri = await fileToDataUri(file);
+      setNewPhotoDataUri(dataUri);
+      setPhotoPreview(dataUri);
     }
   };
 
@@ -95,17 +96,13 @@ export default function EditProfilePage() {
     setSaving(true);
 
     try {
-      let newPhotoURL = dbUser.photoURL || '';
-
-      if (photo) {
-        newPhotoURL = await fileToDataUri(photo);
-      }
-
       // Dados para atualizar no Realtime Database
       const updates: Partial<DbUser> = {};
       if (displayName !== dbUser.displayName) updates.displayName = displayName;
       if (fullPhoneNumber !== dbUser.phone) updates.phone = fullPhoneNumber;
-      if (newPhotoURL !== dbUser.photoURL) updates.photoURL = newPhotoURL;
+      if (newPhotoDataUri && newPhotoDataUri !== dbUser.photoURL) {
+        updates.photoURL = newPhotoDataUri;
+      }
       
       // Atualiza o perfil no Firebase Auth (APENAS displayName)
       await updateProfile(user, {
