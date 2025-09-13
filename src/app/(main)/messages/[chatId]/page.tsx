@@ -242,8 +242,8 @@ export default function ChatPage() {
   }
 
   return (
-    <>
-      <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm p-2 border-b border-border flex items-center gap-4 justify-between">
+    <div className="h-full flex flex-col">
+      <header className="flex-shrink-0 z-10 bg-background/80 backdrop-blur-sm p-2 border-b border-border flex items-center gap-4 justify-between">
         {isSelectionMode ? (
            <>
             <div className="flex items-center gap-4">
@@ -301,7 +301,7 @@ export default function ChatPage() {
          <div ref={messagesEndRef} />
       </main>
 
-      <footer className="p-4 bg-background border-t border-border">
+      <footer className="flex-shrink-0 p-4 bg-background border-t border-border">
         <form onSubmit={handleSendMessage} className="flex gap-2">
           <Input
             value={newMessage}
@@ -314,8 +314,6 @@ export default function ChatPage() {
           </Button>
         </form>
       </footer>
-    </>
+    </div>
   );
 }
-
-    

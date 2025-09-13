@@ -95,7 +95,7 @@ export default function MainLayout({
   return (
     <div className="min-h-screen bg-background flex justify-center">
       <div className="w-full max-w-sm flex flex-col relative">
-        <main className={`flex-1 border-x border-border min-h-0 overflow-y-auto ${isMessagesPage ? 'grid' : ''}`}>
+        <main className={`flex-1 border-x border-border min-h-0 ${isMessagesPage ? '' : 'overflow-y-auto'}`}>
           {children}
         </main>
         {!isMessagesPage && (
