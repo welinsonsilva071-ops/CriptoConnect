@@ -107,10 +107,9 @@ export default function EditProfilePage() {
       if (fullPhoneNumber !== dbUser.phone) updates.phone = fullPhoneNumber;
       if (newPhotoURL !== dbUser.photoURL) updates.photoURL = newPhotoURL;
       
-      // Atualiza o perfil no Firebase Auth
+      // Atualiza o perfil no Firebase Auth (APENAS displayName)
       await updateProfile(user, {
         displayName: displayName,
-        photoURL: newPhotoURL,
       });
       
       // Atualiza os dados no Realtime Database

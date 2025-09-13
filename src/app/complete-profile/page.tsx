@@ -84,11 +84,11 @@ export default function CompleteProfilePage() {
     setLoading(true);
 
     try {
-      let photoURL = user.photoURL || '';
+      let photoDataUri = user.photoURL || '';
 
       if (photo) {
         // Converte a foto para Data URI antes de salvar
-        photoURL = await fileToDataUri(photo);
+        photoDataUri = await fileToDataUri(photo);
       }
       
       const userDbRef = dbRef(db, 'users/' + user.uid);
@@ -97,13 +97,13 @@ export default function CompleteProfilePage() {
         displayName: username,
         email: user.email,
         phone: fullPhoneNumber,
-        photoURL: photoURL,
+        photoURL: photoDataUri,
         createdAt: new Date().toISOString(),
       });
 
+      // Atualiza apenas o displayName no Firebase Auth
       await updateProfile(user, {
         displayName: username,
-        photoURL: photoURL,
       });
 
       toast({
