@@ -51,6 +51,9 @@ export default function ChatPage() {
   const isSelectionMode = selectedMessages.length > 0;
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const isInitialLoad = useRef(true);
+
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -85,15 +88,26 @@ export default function ChatPage() {
 
     const unsubscribeMessages = onValue(messagesRef, (snapshot) => {
       const messagesData = snapshot.val();
-      if (messagesData) {
-        const messagesList: Message[] = Object.keys(messagesData).map(key => ({
-          id: key,
-          ...messagesData[key]
-        })).sort((a,b) => a.timestamp - b.timestamp);
-        setAllMessages(messagesList);
-      } else {
-        setAllMessages([]);
+      const messagesList: Message[] = messagesData 
+        ? Object.keys(messagesData).map(key => ({
+            id: key,
+            ...messagesData[key]
+          })).sort((a,b) => a.timestamp - b.timestamp)
+        : [];
+
+      if (!isInitialLoad.current && messagesList.length > allMessages.length) {
+        const lastMessage = messagesList[messagesList.length - 1];
+        if (lastMessage.author !== currentUser.uid) {
+           audioRef.current?.play().catch(e => console.error("Error playing sound:", e));
+        }
       }
+      
+      setAllMessages(messagesList);
+      
+      if(isInitialLoad.current) {
+        isInitialLoad.current = false;
+      }
+
       setLoading(false);
     });
 
@@ -314,6 +328,7 @@ export default function ChatPage() {
           </Button>
         </form>
       </footer>
+      <audio ref={audioRef} src="/sounds/notification.mp3" preload="auto"></audio>
     </div>
   );
 }
