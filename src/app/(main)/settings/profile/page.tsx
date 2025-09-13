@@ -3,10 +3,9 @@
 
 import { useState, useRef, ChangeEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { User as FirebaseUser, onAuthStateChanged, updateProfile, updateEmail, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
-import { auth, db, storage } from '@/lib/firebase';
+import { User as FirebaseUser, onAuthStateChanged, updateProfile } from 'firebase/auth';
+import { auth, db } from '@/lib/firebase';
 import { ref as dbRef, onValue, update } from 'firebase/database';
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +21,15 @@ type DbUser = {
   phone: string;
   photoURL?: string;
 };
+
+// Função para converter arquivo para Data URI
+const fileToDataUri = (file: File): Promise<string> => 
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+});
 
 export default function EditProfilePage() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -53,7 +61,6 @@ export default function EditProfilePage() {
             setPhotoPreview(userData.photoURL);
             setLoading(false);
           } else {
-            // Se não encontrar os dados, talvez redirecionar
              router.push('/complete-profile');
           }
         });
@@ -91,9 +98,7 @@ export default function EditProfilePage() {
       let newPhotoURL = dbUser.photoURL || '';
 
       if (photo) {
-        const photoStorageRef = storageRef(storage, `avatars/${user.uid}/${photo.name}`);
-        const uploadResult = await uploadBytes(photoStorageRef, photo);
-        newPhotoURL = await getDownloadURL(uploadResult.ref);
+        newPhotoURL = await fileToDataUri(photo);
       }
 
       // Dados para atualizar no Realtime Database

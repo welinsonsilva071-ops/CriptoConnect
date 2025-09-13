@@ -4,16 +4,24 @@
 import { useState, useRef, ChangeEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { User, onAuthStateChanged, updateProfile } from 'firebase/auth';
-import { auth, db, storage } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
 import { ref as dbRef, set } from 'firebase/database';
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { User as UserIcon } from 'lucide-react';
+import { User as UserIcon, Loader2 } from 'lucide-react';
+
+// Função para converter arquivo para Data URI
+const fileToDataUri = (file: File): Promise<string> => 
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+});
 
 export default function CompleteProfilePage() {
   const [user, setUser] = useState<User | null>(null);
@@ -33,6 +41,9 @@ export default function CompleteProfilePage() {
         setUser(currentUser);
         if (currentUser?.phoneNumber) {
           setPhone(currentUser.phoneNumber.replace('+55', '').replace(/\D/g, ''));
+        }
+        if(currentUser?.photoURL) {
+            setPhotoPreview(currentUser.photoURL);
         }
       } else {
         router.push('/login');
@@ -76,9 +87,8 @@ export default function CompleteProfilePage() {
       let photoURL = user.photoURL || '';
 
       if (photo) {
-        const photoStorageRef = storageRef(storage, `avatars/${user.uid}/${photo.name}`);
-        const uploadResult = await uploadBytes(photoStorageRef, photo);
-        photoURL = await getDownloadURL(uploadResult.ref);
+        // Converte a foto para Data URI antes de salvar
+        photoURL = await fileToDataUri(photo);
       }
       
       const userDbRef = dbRef(db, 'users/' + user.uid);
@@ -139,7 +149,7 @@ export default function CompleteProfilePage() {
                 className="h-24 w-24 cursor-pointer"
                 onClick={() => fileInputRef.current?.click()}
               >
-                <AvatarImage src={photoPreview || user?.photoURL || undefined} alt="Avatar" />
+                <AvatarImage src={photoPreview || undefined} alt="Avatar" />
                 <AvatarFallback>
                   <UserIcon className="h-12 w-12" />
                 </AvatarFallback>
@@ -178,7 +188,7 @@ export default function CompleteProfilePage() {
               </div>
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Salvando...' : 'Confirmar e Salvar'}
+              {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...</> : 'Confirmar e Salvar'}
             </Button>
           </form>
         </CardContent>
