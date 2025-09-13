@@ -93,13 +93,13 @@ export default function MainLayout({
   }
 
   return (
-    <div className="min-h-screen bg-background flex justify-center">
-      <div className="w-full max-w-sm flex flex-col relative">
-        <main className={`flex-1 border-x border-border min-h-0 ${isMessagesPage ? '' : 'overflow-y-auto'}`}>
+    <div className="h-screen bg-background flex justify-center">
+      <div className="w-full max-w-sm flex flex-col relative border-x border-border">
+        <main className="flex-1 min-h-0">
           {children}
         </main>
         {!isMessagesPage && (
-           <footer className="sticky bottom-0 bg-background border-t border-border">
+           <footer className="flex-shrink-0 sticky bottom-0 bg-background border-t border-border">
             <nav className="flex justify-around items-center h-16">
               {navItems.map((item) => {
                 const isActive = pathname === item.href;
