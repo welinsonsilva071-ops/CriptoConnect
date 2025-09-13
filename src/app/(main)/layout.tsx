@@ -10,7 +10,6 @@ import { MessageCircle, Users, Library, History } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import IncomingCall from '@/components/calls/incoming-call';
 
 type DbUser = {
   uid: string;
@@ -18,16 +17,6 @@ type DbUser = {
   email: string;
   photoURL?: string;
   createdAt: string;
-}
-
-type IncomingCallData = {
-  callId: string;
-  caller: {
-    uid: string;
-    displayName: string;
-    photoURL?: string;
-  };
-  type: 'voice' | 'video';
 }
 
 const navItems = [
@@ -47,10 +36,8 @@ export default function MainLayout({
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [dbUser, setDbUser] = useState<DbUser | null>(null);
-  const [incomingCall, setIncomingCall] = useState<IncomingCallData | null>(null);
 
   const isMessagesPage = pathname.includes('/messages/');
-  const isCallPage = pathname.includes('/call/') || pathname.includes('/video-call/');
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
@@ -67,22 +54,7 @@ export default function MainLayout({
           if (snapshot.exists()) {
             const userData = snapshot.val();
             setDbUser({ ...userData, uid: currentUser.uid });
-
-            const incomingCallRef = ref(db, `users/${currentUser.uid}/incomingCall`);
-            const unsubscribeCall = onValue(incomingCallRef, (callSnapshot) => {
-              if (callSnapshot.exists()) {
-                setIncomingCall(callSnapshot.val());
-              } else {
-                setIncomingCall(null);
-              }
-            });
-
             setLoading(false);
-            
-            return () => {
-              off(incomingCallRef, 'value', unsubscribeCall);
-            }
-
           } else {
             router.push('/complete-profile');
             setLoading(false);
@@ -123,12 +95,10 @@ export default function MainLayout({
   return (
     <div className="min-h-screen bg-background flex justify-center">
       <div className="w-full max-w-sm flex flex-col relative">
-        {incomingCall && incomingCall.caller && <IncomingCall call={incomingCall} />}
-
-        <main className={`flex-1 border-x border-border min-h-0 overflow-y-auto ${isMessagesPage || isCallPage ? 'grid' : ''}`}>
+        <main className={`flex-1 border-x border-border min-h-0 overflow-y-auto ${isMessagesPage ? 'grid' : ''}`}>
           {children}
         </main>
-        {!isMessagesPage && !isCallPage && (
+        {!isMessagesPage && (
            <footer className="sticky bottom-0 bg-background border-t border-border">
             <nav className="flex justify-around items-center h-16">
               {navItems.map((item) => {

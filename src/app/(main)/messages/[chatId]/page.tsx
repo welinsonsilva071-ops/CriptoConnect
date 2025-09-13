@@ -9,7 +9,7 @@ import { ref, onValue, off, push, serverTimestamp, set, update, get } from 'fire
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ArrowLeft, Send, Phone, Video } from 'lucide-react';
+import { ArrowLeft, Send } from 'lucide-react';
 import Link from 'next/link';
 import MessageBubble from '@/components/messages/message-bubble';
 import startChat from '@/lib/start-chat';
@@ -122,72 +122,6 @@ export default function ChatPage() {
     }
   };
 
-  const handleStartCall = async (type: 'voice' | 'video') => {
-    if (!currentUser || !otherUser) return;
-
-    // Verification before starting the call
-    const otherUserRef = ref(db, `users/${otherUser.uid}`);
-    const otherUserSnap = await get(otherUserRef);
-    if (!otherUserSnap.exists() || !otherUserSnap.val().displayName) {
-        toast({
-            variant: "destructive",
-            title: "Não é possível iniciar a chamada",
-            description: "O usuário ainda não completou o perfil."
-        });
-        return;
-    }
-    
-    try {
-        const callId = push(ref(db, 'calls')).key;
-        if (!callId) throw new Error("Could not create call ID");
-
-        const callData = {
-            callId,
-            caller: {
-              uid: currentUser.uid,
-              displayName: currentUser.displayName || '',
-              photoURL: currentUser.photoURL || '',
-            },
-            receiver: {
-              uid: otherUser.uid,
-              displayName: otherUser.displayName || '',
-              photoURL: otherUser.photoURL || '',
-            },
-            type,
-            status: 'ringing',
-            createdAt: serverTimestamp(),
-        };
-
-        const updates: { [key: string]: any } = {};
-        updates[`/calls/${callId}`] = callData;
-        updates[`/users/${otherUser.uid}/incomingCall`] = {
-            callId,
-            caller: {
-                uid: currentUser.uid,
-                displayName: currentUser.displayName || '',
-                photoURL: currentUser.photoURL || '',
-            },
-            type,
-        };
-
-        await update(ref(db), updates);
-
-        if (type === 'voice') {
-            router.push(`/call/${callId}`);
-        } else {
-            router.push(`/video-call/${callId}`);
-        }
-
-    } catch (error) {
-        console.error("Error starting call:", error);
-        toast({
-            variant: "destructive",
-            title: "Erro ao iniciar chamada",
-            description: "Não foi possível iniciar a chamada. Tente novamente."
-        })
-    }
-};
-
   if (loading) {
     return <div className="flex items-center justify-center h-full">Carregando conversa...</div>;
   }
@@ -212,12 +146,6 @@ export default function ChatPage() {
           )}
         </div>
         <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={() => handleStartCall('voice')}>
-                <Phone />
-            </Button>
-            <Button variant="ghost" size="icon" onClick={() => handleStartCall('video')}>
-                <Video />
-            </Button>
         </div>
       </header>
 
