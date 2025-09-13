@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from '@/lib/firebase';
-import { ref, onValue, off, push, serverTimestamp, update, get, remove } from 'firebase/database';
+import { ref, onValue, off, push, serverTimestamp, update } from 'firebase/database';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +15,10 @@ import MessageBubble from '@/components/messages/message-bubble';
 import startChat from '@/lib/start-chat';
 import { useToast } from '@/hooks/use-toast';
 import { Checkbox } from '@/components/ui/checkbox';
+import { isToday, isYesterday, format, isSameDay } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import DateSeparator from '@/components/messages/date-separator';
+
 
 type Message = {
   id: string;
@@ -51,14 +55,16 @@ export default function ChatPage() {
   const isSelectionMode = selectedMessages.length > 0;
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const isInitialLoad = useRef(true);
-
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  
+  const scrollToBottom = (behavior: "smooth" | "auto" = "smooth") => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
   };
 
-  useEffect(scrollToBottom, [visibleMessages]);
+  useEffect(() => {
+    if(!isSelectionMode) {
+      scrollToBottom("auto");
+    }
+  }, [visibleMessages, isSelectionMode]);
 
   // Effect to filter messages whenever allMessages or deletedForMeIds changes
   useEffect(() => {
@@ -95,11 +101,6 @@ export default function ChatPage() {
         : [];
       
       setAllMessages(messagesList);
-      
-      if(isInitialLoad.current) {
-        isInitialLoad.current = false;
-      }
-
       setLoading(false);
     });
 
@@ -173,14 +174,10 @@ export default function ChatPage() {
     const deleteForEveryoneUpdates: { [key: string]: null } = {};
     const deleteForMeUpdates: { [key: string]: true } = {};
     
-    const originalDeletedForMe = { ...deletedForMeIds };
-
     messagesToDelete.forEach(msg => {
       if (msg.author === currentUser.uid) {
-        // Delete for everyone
         deleteForEveryoneUpdates[`/chats/${chatId}/messages/${msg.id}`] = null;
       } else {
-        // Delete for me
         deleteForMeUpdates[`/users/${currentUser.uid}/deletedMessages/${chatId}/${msg.id}`] = true;
       }
     });
@@ -191,12 +188,6 @@ export default function ChatPage() {
         
       toast({
           title: `${selectedMessages.length} mensagem(ns) excluída(s).`,
-          action: (
-            <Button variant="secondary" onClick={() => handleUndoDelete(messagesToDelete, originalDeletedForMe)}>
-                Desfazer
-            </Button>
-          ),
-          duration: 3000,
       });
 
       setSelectedMessages([]);
@@ -209,42 +200,45 @@ export default function ChatPage() {
       });
     }
   };
-  
-  const handleUndoDelete = async (messagesToRestore: Message[], originalDeletedState: DeletedMessages) => {
-    if (!currentUser) return;
-    const restoreUpdates: { [key: string]: any } = {};
-    const undoDeleteForMeUpdates: { [key: string]: any } = {};
 
-    messagesToRestore.forEach(msg => {
-      if (msg.author === currentUser.uid) {
-        // Restore message deleted for everyone
-        restoreUpdates[`/chats/${chatId}/messages/${msg.id}`] = {
-            author: msg.author,
-            content: msg.content,
-            timestamp: msg.timestamp
-        };
-      } else {
-        // Undo "delete for me"
-        undoDeleteForMeUpdates[`/users/${currentUser.uid}/deletedMessages/${chatId}/${msg.id}`] = null;
+  const renderMessagesWithDateSeparators = () => {
+    const messageElements: JSX.Element[] = [];
+    let lastDate: Date | null = null;
+
+    visibleMessages.forEach((message, index) => {
+      const messageDate = new Date(message.timestamp);
+
+      if (!lastDate || !isSameDay(messageDate, lastDate)) {
+        let label = '';
+        if (isToday(messageDate)) {
+          label = 'Hoje';
+        } else if (isYesterday(messageDate)) {
+          label = 'Ontem';
+        } else {
+          label = format(messageDate, "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
+        }
+        messageElements.push(<DateSeparator key={`date-${message.id}`} date={label} />);
       }
+
+      messageElements.push(
+        <MessageBubble 
+          key={message.id} 
+          message={message} 
+          isCurrentUser={message.author === currentUser?.uid}
+          isSelected={selectedMessages.includes(message.id)}
+          onSelect={handleMessageSelect}
+          isSelectionMode={isSelectionMode}
+        />
+      );
+
+      lastDate = messageDate;
     });
 
-    try {
-        await update(ref(db), { ...restoreUpdates, ...undoDeleteForMeUpdates });
-        toast({ title: "Exclusão cancelada." });
-    } catch (error) {
-        console.error("Error undoing delete:", error);
-        toast({
-            variant: "destructive",
-            title: "Erro",
-            description: "Não foi possível restaurar as mensagens."
-        });
-    }
+    return messageElements;
   };
 
-
   if (loading) {
-    return <div className="flex items-center justify-center h-full">Carregando conversa...</div>;
+    return <div className="h-full flex flex-col items-center justify-center">Carregando conversa...</div>;
   }
 
   return (
@@ -294,17 +288,8 @@ export default function ChatPage() {
       </header>
 
       <main className="flex-1 overflow-y-auto p-4 space-y-1">
-        {visibleMessages.map((message) => (
-          <MessageBubble 
-            key={message.id} 
-            message={message} 
-            isCurrentUser={message.author === currentUser?.uid}
-            isSelected={selectedMessages.includes(message.id)}
-            onSelect={handleMessageSelect}
-            isSelectionMode={isSelectionMode}
-          />
-        ))}
-         <div ref={messagesEndRef} />
+        {renderMessagesWithDateSeparators()}
+        <div ref={messagesEndRef} />
       </main>
 
       <footer className="flex-shrink-0 p-4 bg-background border-t border-border">

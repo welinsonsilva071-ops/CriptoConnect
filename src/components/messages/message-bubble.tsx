@@ -2,7 +2,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 type Message = {
   id: string;
@@ -42,6 +42,7 @@ export default function MessageBubble({ message, isCurrentUser, isSelected, isSe
   }
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    if (isSelectionMode) return;
     const touch = e.touches[0];
     touchStartPos.current = { x: touch.clientX, y: touch.clientY };
     startPressTimer();
@@ -60,25 +61,22 @@ export default function MessageBubble({ message, isCurrentUser, isSelected, isSe
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-     // Apenas para o botão esquerdo do mouse
-    if (e.button === 0) {
+    if (isSelectionMode) return;
+    if (e.button === 0) { // Apenas para o botão esquerdo do mouse
       startPressTimer();
     }
   }
 
   const handleClick = () => {
-    // Limpa o timer se for um clique rápido para não acionar o long press
     if (pressTimer.current) {
         clearPressTimer();
     }
-
     if (isSelectionMode) {
       onSelect(message.id);
     }
   };
 
   useEffect(() => {
-    // Limpa o timer se o componente for desmontado
     return () => {
       clearPressTimer();
     };
@@ -87,26 +85,22 @@ export default function MessageBubble({ message, isCurrentUser, isSelected, isSe
   return (
     <div
       className={cn(
-        "flex items-end gap-2 group transition-colors duration-200 rounded-lg",
+        "flex items-end gap-2 group transition-colors duration-200 rounded-lg -my-1", // Negative margin to bring bubbles closer
         isCurrentUser ? "justify-end" : "justify-start",
         isSelected ? "bg-blue-500/20" : "bg-transparent",
       )}
-      // Eventos de Toque (Mobile)
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={clearPressTimer}
-      // Eventos de Mouse (Desktop)
       onMouseDown={handleMouseDown}
       onMouseUp={clearPressTimer}
       onMouseLeave={clearPressTimer}
-      // Clique comum (para selecionar no modo de seleção)
       onClick={handleClick}
-      // Evita o menu de contexto do navegador no long press
       onContextMenu={(e) => e.preventDefault()}
     >
       <div
         className={cn(
-          "max-w-xs md:max-w-md lg:max-w-lg rounded-lg px-4 py-2 my-1",
+          "max-w-xs md:max-w-md lg:max-w-lg rounded-lg px-3 py-2 my-1 flex items-end gap-2",
            isSelected
             ? (isCurrentUser ? "bg-blue-700 text-white" : "bg-blue-600 text-white")
             : (isCurrentUser
@@ -114,13 +108,13 @@ export default function MessageBubble({ message, isCurrentUser, isSelected, isSe
               : "bg-muted rounded-bl-none")
         )}
       >
-        <p className="text-base break-words">{message.content}</p>
-        <p className={cn(
-          "text-xs mt-1 text-right", 
+        <p className="text-base break-words whitespace-pre-wrap">{message.content}</p>
+        <span className={cn(
+          "text-xs whitespace-nowrap self-end", 
           isSelected ? "text-white/70" : (isCurrentUser ? "text-primary-foreground/70" : "text-muted-foreground")
         )}>
           {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </p>
+        </span>
       </div>
     </div>
   );
