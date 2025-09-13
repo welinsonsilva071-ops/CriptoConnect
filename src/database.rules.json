@@ -10,6 +10,12 @@
         ".validate": "newData.hasChildren(['uid', 'displayName', 'email', 'createdAt', 'phone']) && newData.child('uid').val() === $uid && newData.child('displayName').isString() && newData.child('displayName').val().length > 0 && newData.child('email').isString() && newData.child('phone').isString() && (!newData.hasChild('photoURL') || newData.child('photoURL').isString())",
         "chats": {
           ".write": "auth != null"
+        },
+        "deletedMessages": {
+          ".read": "auth != null && auth.uid === $uid",
+          "$chatId": {
+            ".write": "auth != null && auth.uid === $uid"
+          }
         }
       },
       ".indexOn": ["phone"]
@@ -28,3 +34,5 @@
     }
   }
 }
+
+    

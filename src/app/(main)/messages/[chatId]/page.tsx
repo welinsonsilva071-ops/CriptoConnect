@@ -29,6 +29,10 @@ type ChatMember = {
     photoURL?: string;
 }
 
+type DeletedMessages = {
+  [messageId: string]: boolean;
+}
+
 export default function ChatPage() {
   const [currentUser] = useAuthState(auth);
   const router = useRouter();
@@ -36,22 +40,29 @@ export default function ChatPage() {
   const { toast } = useToast();
   const chatId = params.chatId as string;
 
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [allMessages, setAllMessages] = useState<Message[]>([]);
+  const [visibleMessages, setVisibleMessages] = useState<Message[]>([]);
+  const [deletedForMeIds, setDeletedForMeIds] = useState<DeletedMessages>({});
   const [newMessage, setNewMessage] = useState('');
   const [otherUser, setOtherUser] = useState<ChatMember | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [selectedMessages, setSelectedMessages] = useState<string[]>([]);
   const isSelectionMode = selectedMessages.length > 0;
-  let deleteTimeout = useRef<NodeJS.Timeout | null>(null);
-
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  useEffect(scrollToBottom, [messages]);
+  useEffect(scrollToBottom, [visibleMessages]);
+
+  // Effect to filter messages whenever allMessages or deletedForMeIds changes
+  useEffect(() => {
+    const filtered = allMessages.filter(msg => !deletedForMeIds[msg.id]);
+    setVisibleMessages(filtered);
+  }, [allMessages, deletedForMeIds]);
 
   useEffect(() => {
     if (!currentUser || !chatId) return;
@@ -70,6 +81,7 @@ export default function ChatPage() {
 
     const messagesRef = ref(db, `chats/${chatId}/messages`);
     const otherUserRef = ref(db, `users/${otherUserId}`);
+    const deletedMessagesRef = ref(db, `users/${currentUser.uid}/deletedMessages/${chatId}`);
 
     const unsubscribeMessages = onValue(messagesRef, (snapshot) => {
       const messagesData = snapshot.val();
@@ -78,9 +90,9 @@ export default function ChatPage() {
           id: key,
           ...messagesData[key]
         })).sort((a,b) => a.timestamp - b.timestamp);
-        setMessages(messagesList);
+        setAllMessages(messagesList);
       } else {
-        setMessages([]);
+        setAllMessages([]);
       }
       setLoading(false);
     });
@@ -96,10 +108,14 @@ export default function ChatPage() {
        }
     });
 
+    const unsubscribeDeleted = onValue(deletedMessagesRef, (snapshot) => {
+      setDeletedForMeIds(snapshot.val() || {});
+    });
+
     return () => {
       off(messagesRef, 'value', unsubscribeMessages);
       off(otherUserRef, 'value', unsubscribeUser);
-      if(deleteTimeout.current) clearTimeout(deleteTimeout.current);
+      off(deletedMessagesRef, 'value', unsubscribeDeleted);
     };
 
   }, [currentUser, chatId, router, toast]);
@@ -137,67 +153,87 @@ export default function ChatPage() {
   };
 
   const handleSelectAll = () => {
-    if (selectedMessages.length === messages.length) {
+    if (selectedMessages.length === visibleMessages.length) {
       setSelectedMessages([]);
     } else {
-      setSelectedMessages(messages.map(m => m.id));
+      setSelectedMessages(visibleMessages.map(m => m.id));
     }
   };
 
   const handleDeleteMessages = async () => {
-    if (!currentUser) return;
+    if (!currentUser || selectedMessages.length === 0) return;
 
-    const messagesToDelete = messages.filter(m => selectedMessages.includes(m.id));
-    const updates: { [key: string]: null } = {};
-    selectedMessages.forEach(id => {
-        updates[`/chats/${chatId}/messages/${id}`] = null;
+    const messagesToDelete = allMessages.filter(m => selectedMessages.includes(m.id));
+    const deleteForEveryoneUpdates: { [key: string]: null } = {};
+    const deleteForMeUpdates: { [key: string]: true } = {};
+    
+    const originalDeletedForMe = { ...deletedForMeIds };
+
+    messagesToDelete.forEach(msg => {
+      if (msg.author === currentUser.uid) {
+        // Delete for everyone
+        deleteForEveryoneUpdates[`/chats/${chatId}/messages/${msg.id}`] = null;
+      } else {
+        // Delete for me
+        deleteForMeUpdates[`/users/${currentUser.uid}/deletedMessages/${chatId}/${msg.id}`] = true;
+      }
     });
 
     try {
-        await update(ref(db), updates);
+      const updates = { ...deleteForEveryoneUpdates, ...deleteForMeUpdates };
+      await update(ref(db), updates);
         
-        toast({
-            title: `${selectedMessages.length} mensagem(ns) excluída(s).`,
-            action: (
-              <Button variant="secondary" onClick={() => handleUndoDelete(messagesToDelete)}>
-                  Desfazer
-              </Button>
-            ),
-            duration: 3000,
-        });
+      toast({
+          title: `${selectedMessages.length} mensagem(ns) excluída(s).`,
+          action: (
+            <Button variant="secondary" onClick={() => handleUndoDelete(messagesToDelete, originalDeletedForMe)}>
+                Desfazer
+            </Button>
+          ),
+          duration: 3000,
+      });
 
-        setSelectedMessages([]);
+      setSelectedMessages([]);
     } catch (error) {
-        console.error("Error deleting messages:", error);
-        toast({
-            variant: "destructive",
-            title: "Erro",
-            description: "Não foi possível excluir as mensagens."
-        })
+      console.error("Error deleting messages:", error);
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Não foi possível excluir as mensagens."
+      });
     }
   };
   
-  const handleUndoDelete = async (messagesToRestore: Message[]) => {
-      const updates: { [key: string]: any } = {};
-      messagesToRestore.forEach(msg => {
-          updates[`/chats/${chatId}/messages/${msg.id}`] = {
-              author: msg.author,
-              content: msg.content,
-              timestamp: msg.timestamp
-          };
-      });
+  const handleUndoDelete = async (messagesToRestore: Message[], originalDeletedState: DeletedMessages) => {
+    if (!currentUser) return;
+    const restoreUpdates: { [key: string]: any } = {};
+    const undoDeleteForMeUpdates: { [key: string]: any } = {};
 
-      try {
-          await update(ref(db), updates);
-          toast({ title: "Exclusão cancelada." });
-      } catch (error) {
-          console.error("Error undoing delete:", error);
-          toast({
-              variant: "destructive",
-              title: "Erro",
-              description: "Não foi possível restaurar as mensagens."
-          })
+    messagesToRestore.forEach(msg => {
+      if (msg.author === currentUser.uid) {
+        // Restore message deleted for everyone
+        restoreUpdates[`/chats/${chatId}/messages/${msg.id}`] = {
+            author: msg.author,
+            content: msg.content,
+            timestamp: msg.timestamp
+        };
+      } else {
+        // Undo "delete for me"
+        undoDeleteForMeUpdates[`/users/${currentUser.uid}/deletedMessages/${chatId}/${msg.id}`] = null;
       }
+    });
+
+    try {
+        await update(ref(db), { ...restoreUpdates, ...undoDeleteForMeUpdates });
+        toast({ title: "Exclusão cancelada." });
+    } catch (error) {
+        console.error("Error undoing delete:", error);
+        toast({
+            variant: "destructive",
+            title: "Erro",
+            description: "Não foi possível restaurar as mensagens."
+        });
+    }
   };
 
 
@@ -219,7 +255,7 @@ export default function ChatPage() {
             <div className="flex items-center gap-2">
                 <Checkbox
                   aria-label="Selecionar todas as mensagens"
-                  checked={selectedMessages.length === messages.length && messages.length > 0}
+                  checked={selectedMessages.length === visibleMessages.length && visibleMessages.length > 0}
                   onCheckedChange={handleSelectAll}
                 />
                  <Button variant="ghost" size="icon" onClick={handleDeleteMessages} disabled={selectedMessages.length === 0}>
@@ -252,7 +288,7 @@ export default function ChatPage() {
       </header>
 
       <main className="flex-1 overflow-y-auto p-4 space-y-1">
-        {messages.map((message) => (
+        {visibleMessages.map((message) => (
           <MessageBubble 
             key={message.id} 
             message={message} 
@@ -281,3 +317,5 @@ export default function ChatPage() {
     </>
   );
 }
+
+    
