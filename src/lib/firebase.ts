@@ -1,16 +1,17 @@
+
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getDatabase } from 'firebase/database';
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
-  "projectId": "ciptoconnect",
-  "appId": "1:75601167967:web:6c9dc67bed68e11390bdea",
-  "storageBucket": "ciptoconnect.appspot.com",
-  "apiKey": "AIzaSyAlDmg8gVChqIyBe3ex7lXWc2pdikY6oek",
-  "authDomain": "ciptoconnect.firebaseapp.com",
-  "measurementId": "",
-  "messagingSenderId": "75601167967"
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
 // Initialize Firebase
@@ -20,5 +21,3 @@ const db = getDatabase(app);
 const storage = getStorage(app);
 
 export { app, auth, db, storage };
-
-    
